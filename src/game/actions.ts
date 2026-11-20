@@ -26,6 +26,10 @@ export type RuleViolation =
   | { readonly code: 'gameOver' }
   | { readonly code: 'cannotAvoidTwice' }
   | { readonly code: 'cannotAvoidAfterEntering' }
+  /** The final room (Dungeon empty, RULES.md A4) can never be avoided. */
+  | { readonly code: 'cannotAvoidFinalRoom' }
+  /** `enterRoom` while already resolving the room. */
+  | { readonly code: 'alreadyEntered' }
   | { readonly code: 'cardNotInRoom'; readonly cardId: CardId }
   | { readonly code: 'noWeapon'; readonly cardId: CardId }
   | { readonly code: 'weaponCannotFight'; readonly cardId: CardId; readonly limit: number }
