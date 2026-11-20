@@ -2,7 +2,7 @@
 
 Scoundrel is a static, client-only web game: TypeScript, Vite, Canvas/WebGL, Web Audio. No backend.
 This document records module boundaries and contracts agreed at the first Design Review (Adama, 2026-11-20).
-Rules live in [RULES.md](RULES.md).
+Rules live in [RULES.md](RULES.md). The interactive tutorial (Design Review 2) is specified in [TUTORIAL.md](TUTORIAL.md).
 
 ## Principles
 
@@ -24,24 +24,29 @@ src/
   render/    Canvas/WebGL drawing, CRT post-process, hit testing (owner: Starbuck).
   fx/        Animation director: tweens, shake, flashes, popups, cues (owner: Gaeta).
   audio/     Web Audio engine: SFX, music, buses, mute (owner: Gaeta).
+  tutorial/  Tutorial step machine + lesson script (owner: Tyrol). Pure, DOM-free; drives the real engine.
   main.ts    Entry point. Creates the app.
 tests/
   unit/      Vitest, Node environment. Rules and pure logic (owner: Tigh).
   e2e/       Playwright, desktop + mobile Chromium (owner: Tigh).
-docs/        RULES.md, ARCHITECTURE.md.
+docs/        RULES.md, ARCHITECTURE.md, TUTORIAL.md.
 ```
 
 ### Allowed dependencies
 
 ```
-game   <- ui, render, fx, audio   (via src/game/index.ts only; type imports preferred outside ui)
+game   <- ui, render, fx, audio, tutorial   (via src/game/index.ts only; type imports preferred outside ui)
+tutorial <- ui (controller, view), render (types only)
 ui/view.ts <- render, fx           (shared presentation types)
 fx/types.ts <- render              (FxFrame)
 game   -> nothing
+tutorial -> game only
 ```
 
-`src/game` must never import from another `src/` folder. Enforced by `tsconfig.game.json`, which typechecks
-`src/game` without the DOM lib (part of `npm run typecheck`), and by code review.
+`src/game` must never import from another `src/` folder, and `src/tutorial` may import only `src/game`. Enforced by
+`tsconfig.game.json`, which typechecks `src/game` and `src/tutorial` without the DOM lib (part of `npm run typecheck`),
+and by code review. The tutorial never forks a rule: it chooses the deck (`createGame({ deck })`), narrows legal moves
+with a gate, and advances on engine events (see TUTORIAL.md).
 
 ## Data flow
 
@@ -82,13 +87,17 @@ game   -> nothing
 | `FxDirector`, `FxFrame`, `FxCue` | `src/fx/types.ts` | Gaeta | render, ui/app, audio |
 | `AudioEngine`, `SfxId`, `MusicId` | `src/audio/types.ts` | Gaeta | ui/app |
 | `Settings` | `src/ui/settings.ts` | Starbuck | audio, render, fx |
+| Tutorial types, step machine, script | `src/tutorial/{types,machine,script}.ts` | Tyrol | ui, render, tests |
+| `TutorialController` (app adapter) | `src/ui/tutorialController.ts` | Starbuck | ui/app |
+| Coach overlay drawing | `src/render/coach.ts` | Starbuck | renderer |
+| `CoachFx`, `tutorialCue`, `TutorialSfxId` | `src/fx/types.ts`, `src/fx/coach.ts`, `src/audio/types.ts` | Gaeta | render, ui/app |
 
 Stubs throw `not implemented: <fn> (owner: <name>)` until their owner replaces them.
 Changing a contract shape needs a Design Review and a recorded decision.
 
 ## Engine API summary
 
-- `createGame({ seed, rules?, rngFactory? })` returns `{ state, events }`.
+- `createGame({ seed, rules?, rngFactory?, deck? })` returns `{ state, events }`. `deck` (Design Review 2) plays that exact order, unshuffled.
 - `step(state, action)` returns `{ ok: true, state, events }` or `{ ok: false, state, violation }`. It never throws on illegal input.
 - Actions: `enterRoom`, `avoidRoom`, `playCard { cardId, mode?: 'weapon' | 'barehanded' }`.
 - Queries for the UI: `legalActions`, `canAvoidRoom`, `canUseWeaponOn`, `weaponLimit`, `previewDamage`, `computeScore`.

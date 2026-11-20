@@ -26,6 +26,15 @@ export type SfxId =
   | 'win'
   | 'lose';
 
+/**
+ * Design Review 2 (Gaeta): tutorial SFX. Merge into SfxId when the voices land in synth.ts (SFX is an exhaustive
+ * Record<SfxId, ...>, so they live here until then). Played by ui/app from TutorialController signals, not FxCues:
+ *  - coachBlip: soft two-note blip when new coach text or a nudge appears (quiet, under uiClick level).
+ *  - stepSuccess: short rising chime when an action step completes (distinct from roomClear and win).
+ *  - tutorialComplete: brief fanfare on the recap screen (shorter than win; win still plays on GameWon).
+ */
+export type TutorialSfxId = 'coachBlip' | 'stepSuccess' | 'tutorialComplete';
+
 export type MusicId = 'title' | 'dungeon' | 'gameOver';
 
 export type AudioBus = 'master' | 'sfx' | 'music';

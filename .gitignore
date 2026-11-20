@@ -23,6 +23,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+.vitest/
 
 # Local editor / OS / Claude
 .claude/settings.local.json

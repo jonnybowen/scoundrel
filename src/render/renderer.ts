@@ -415,6 +415,21 @@ export function createCanvasRenderer(): Renderer {
         return { label: '+', style: BTN.blue! };
       case 'closeMenu':
         return { label: 'BACK', style: BTN.green! };
+      // Design Review 2 tutorial buttons (labels per docs/TUTORIAL.md; never laid out until Starbuck wires them).
+      case 'tutorial':
+        return { label: 'TUTORIAL', style: BTN.blue! };
+      case 'tutorialAccept':
+        return { label: 'TEACH ME', style: BTN.green! };
+      case 'tutorialDecline':
+        return { label: 'I KNOW THE RULES', style: BTN.grey! };
+      case 'tutorialNext':
+        return { label: 'NEXT', style: BTN.green! };
+      case 'tutorialSkip':
+        return { label: view.chrome.menuOpen ? 'LEAVE TUTORIAL' : 'SKIP', style: view.chrome.menuOpen ? BTN.red! : BTN.grey! };
+      case 'tutorialPlayReal':
+        return { label: 'PLAY A REAL RUN', style: BTN.green! };
+      case 'tutorialReplay':
+        return { label: 'REPLAY TUTORIAL', style: BTN.panel! };
     }
   };
 

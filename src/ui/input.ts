@@ -26,6 +26,14 @@ export function targetToIntent(target: HitTarget | null, view: GameView): UiInte
         case 'volDown': return { type: 'changeVolume', delta: -0.1 };
         case 'volUp': return { type: 'changeVolume', delta: 0.1 };
         case 'closeMenu': return { type: 'closeSettings' };
+        // Design Review 2 tutorial buttons (only laid out once the tutorial is wired).
+        case 'tutorial': return { type: 'tutorialStart' };
+        case 'tutorialAccept': return { type: 'tutorialStart' };
+        case 'tutorialDecline': return { type: 'tutorialDecline' };
+        case 'tutorialNext': return { type: 'tutorialNext' };
+        case 'tutorialSkip': return { type: 'tutorialSkip' };
+        case 'tutorialPlayReal': return { type: 'tutorialPlayReal' };
+        case 'tutorialReplay': return { type: 'tutorialStart' };
       }
   }
 }

@@ -10,6 +10,8 @@
  * screen/hover/toast/result/settings fields, and selectView accepts `null` (title screen, no game yet).
  * Review-gate additions (pre-approved by Adama): GameView.cardsLeftToResolve, RoomCardView.kind, RoomCardView.lethal,
  * so render reads rule outcomes instead of deriving them.
+ * Design Review 2 (tutorial, Adama): tutorial ButtonIds and UiIntents, optional ViewChrome.tutorial /
+ * tutorialOffer, optional LayoutSnapshot.regions / coach. All optional, so the running app is unaffected until wired.
  */
 import {
   MAX_HP,
@@ -25,6 +27,7 @@ import {
 } from '../game';
 import type { Card, CardId, CardKind, FightMode, GameState, Phase } from '../game';
 import type { Settings } from './settings';
+import type { CoachControlId, RegionId, TutorialChrome } from '../tutorial';
 
 /** Logical-pixel rectangle (pre-upscale, see render/types.ts LOGICAL_*). */
 export interface Rect {
@@ -48,7 +51,23 @@ export type ButtonId =
   | 'motion'
   | 'volDown'
   | 'volUp'
-  | 'closeMenu';
+  | 'closeMenu'
+  // Tutorial (Design Review 2):
+  /** Title screen: start the tutorial. */
+  | 'tutorial'
+  /** First-launch offer: "TEACH ME" / "I KNOW THE RULES". */
+  | 'tutorialAccept'
+  | 'tutorialDecline'
+  /** Coach panel: next page / leave the tutorial (also the settings-menu row while in the tutorial). */
+  | 'tutorialNext'
+  | 'tutorialSkip'
+  /** Recap screen. */
+  | 'tutorialPlayReal'
+  | 'tutorialReplay';
+
+/** Compile-time check: every coach control the tutorial can spotlight is a real ButtonId. */
+type _CoachControlsAreButtons = CoachControlId extends ButtonId ? true : never;
+export const COACH_CONTROLS_ARE_BUTTONS: _CoachControlsAreButtons = true;
 
 /** Per-room-card affordances, precomputed so render never re-implements rules. */
 export interface RoomCardView {
@@ -83,6 +102,14 @@ export interface ViewChrome {
   readonly settings: Settings;
   /** Non-null when the game could not start (e.g. engine unavailable). Shown on the title screen. */
   readonly error: string | null;
+  /**
+   * Design Review 2: present (non-null) only while the tutorial runs (screen stays 'game'). Coach panel, spotlight,
+   * arrow and recap are drawn from this alone. The app latches it while fx.isBusy() (docs/TUTORIAL.md "FX timing").
+   * When set, render suppresses the normal hint line and the normal result panel.
+   */
+  readonly tutorial?: TutorialChrome | null;
+  /** Design Review 2: title screen shows the first-launch "learn to play?" offer (settings.tutorialSeen false). */
+  readonly tutorialOffer?: boolean;
 }
 
 /**
@@ -124,6 +151,9 @@ export interface UiLocalState {
   readonly showResult: boolean;
   readonly settings: Settings;
   readonly error: string | null;
+  /** Design Review 2: see ViewChrome.tutorial / tutorialOffer. */
+  readonly tutorial?: TutorialChrome | null;
+  readonly tutorialOffer?: boolean;
 }
 
 function chromeOf(ui: UiLocalState): ViewChrome {
@@ -135,6 +165,8 @@ function chromeOf(ui: UiLocalState): ViewChrome {
     showResult: ui.showResult,
     settings: ui.settings,
     error: ui.error,
+    ...(ui.tutorial !== undefined ? { tutorial: ui.tutorial } : {}),
+    ...(ui.tutorialOffer !== undefined ? { tutorialOffer: ui.tutorialOffer } : {}),
   };
 }
 
@@ -236,6 +268,10 @@ export interface LayoutSnapshot {
   readonly buttons: ReadonlyMap<ButtonId, Rect>;
   /** 'portrait' on phones, 'landscape' on desktop; layout differs, rules do not. */
   readonly orientation: 'portrait' | 'landscape';
+  /** Design Review 2: rects for coach spotlight regions (hp, score, weaponLimit...). Present while the tutorial runs. */
+  readonly regions?: ReadonlyMap<RegionId, Rect>;
+  /** Design Review 2: the coach panel rect (or recap panel). Present while the tutorial runs. */
+  readonly coach?: Rect;
 }
 
 /** What a pointer is over. Produced by Renderer.hitTest. */
@@ -265,4 +301,17 @@ export type UiIntent =
   | { readonly type: 'toggleCrt' }
   | { readonly type: 'toggleReducedMotion' }
   | { readonly type: 'changeVolume'; readonly delta: number }
-  | { readonly type: 'skip' };
+  | { readonly type: 'skip' }
+  // Tutorial (Design Review 2). Keys: T start (title), Enter/ArrowRight next (info pages only; otherwise Enter
+  // keeps meaning enterRoom), X leave, and on the offer Enter accept / Esc decline; on the recap Enter play a
+  // real run, R replay, Esc title.
+  /** Start (or restart) the tutorial. Marks settings.tutorialSeen. Also the offer's "TEACH ME". */
+  | { readonly type: 'tutorialStart' }
+  /** Next coach page / complete an info step. Gated by fx.isBusy() like game actions (busy -> fx.skip()). */
+  | { readonly type: 'tutorialNext' }
+  /** Leave the tutorial for the title screen. Marks tutorialSeen. No confirmation; restart is one tap away. */
+  | { readonly type: 'tutorialSkip' }
+  /** First-launch offer: "I KNOW THE RULES". Marks tutorialSeen, stays on the title. */
+  | { readonly type: 'tutorialDecline' }
+  /** Recap: "PLAY A REAL RUN" -> a normal newGame with a random seed. */
+  | { readonly type: 'tutorialPlayReal' };

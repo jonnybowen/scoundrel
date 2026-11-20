@@ -10,6 +10,11 @@ export interface Settings {
   readonly musicVolume: number; // 0..1
   readonly crtEnabled: boolean;
   readonly reducedMotion: boolean; // defaults from prefers-reduced-motion
+  /**
+   * Design Review 2: the first-launch tutorial offer has been answered (accepted, declined, or the tutorial was
+   * started/finished/left from anywhere). While false, the title screen shows the offer. Missing in older saves = false.
+   */
+  readonly tutorialSeen: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -19,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   musicVolume: 0.6,
   crtEnabled: true,
   reducedMotion: false,
+  tutorialSeen: false,
 };
 
 export const SETTINGS_KEY = 'scoundrel.settings.v1';
@@ -53,6 +59,7 @@ export function loadSettings(): Settings {
       musicVolume: clamp01(p.musicVolume, defaults.musicVolume),
       crtEnabled: bool(p.crtEnabled, defaults.crtEnabled),
       reducedMotion: bool(p.reducedMotion, defaults.reducedMotion),
+      tutorialSeen: bool(p.tutorialSeen, defaults.tutorialSeen),
     };
   } catch {
     return defaults;

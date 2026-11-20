@@ -46,7 +46,29 @@ export interface FxFrame {
   readonly popups: readonly { readonly text: string; readonly x: number; readonly y: number; readonly alpha: number; readonly color: string }[];
   /** Extra CRT intensity bump (0..1) for big moments; render/post-process adds it to base params. */
   readonly crtPulse: number;
+  /**
+   * Design Review 2 (optional, Gaeta): tutorial overlay animation. Absent = static overlay (also the
+   * reduced-motion result). Render (src/render/coach.ts) reads it; it never affects isBusy().
+   */
+  readonly coach?: CoachFx;
 }
+
+/** Design Review 2: animation values for the coach overlay, all 0..1 unless noted. */
+export interface CoachFx {
+  /** Spotlight ring/glow pulse, looping while a spotlight is shown. */
+  readonly spotlightPulse: number;
+  /** Arrow bob offset in logical pixels toward the target (0..3). */
+  readonly arrowBob: number;
+  /** Panel "pop" when new text appears (decays 1 -> 0). */
+  readonly panelBump: number;
+  /** Small horizontal shake in logical px for a nudge (decays to 0). Never screen shake. */
+  readonly nudgeShake: number;
+  /** Green success flash on the panel border when a step is completed (decays 1 -> 0). */
+  readonly success: number;
+}
+
+/** Design Review 2: cosmetic tutorial cues the app sends to fx (from TutorialController signals). */
+export type TutorialFxCue = 'coachShown' | 'stepSucceeded' | 'nudged' | 'completed';
 
 /** An event reaching the screen; audio and haptics key off these. */
 export interface FxCue {
@@ -73,6 +95,11 @@ export interface FxDirector {
    * ui/ forwards hover HitTargets of kind 'card' here; null clears. Purely cosmetic, never blocks.
    */
   setHover?(cardId: CardId | null): void;
+  /**
+   * Optional (Design Review 2, Gaeta): drive FxFrame.coach. Purely cosmetic: never queues, never makes isBusy()
+   * true, never delays game-event cues. Reduced motion: values stay 0 except spotlightPulse fixed at 0.5.
+   */
+  tutorialCue?(cue: TutorialFxCue): void;
 }
 
 export function createFxDirector(): FxDirector {

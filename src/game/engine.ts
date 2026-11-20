@@ -14,6 +14,7 @@ import type { GameEvent } from './events';
 import { DEFAULT_RULES } from './state';
 import type { FightMode, GameState, RulesOptions } from './state';
 import { createRng, shuffle } from './rng';
+import { notImplemented } from './notImplemented';
 import type { RngFactory, Seed } from './rng';
 
 export interface NewGameOptions {
@@ -21,6 +22,13 @@ export interface NewGameOptions {
   readonly rules?: Partial<RulesOptions>;
   /** Inject a different PRNG (tests). Defaults to createRng. */
   readonly rngFactory?: RngFactory;
+  /**
+   * Design Review 2 (additive, impl owner Tyrol): play this exact deck instead of shuffling, top first.
+   * Used by the tutorial's scripted dungeon. Any number of cards with unique ids (consistent with the accepted
+   * hand-built-state ruling); the seed is still recorded but the RNG is not consulted. Everything else
+   * (first deal, events, rules) is identical to a shuffled game. Replay with the same options reproduces it.
+   */
+  readonly deck?: readonly Card[];
 }
 
 export interface Transition {
@@ -143,6 +151,7 @@ function revealNewRoom(d: Draft, events: GameEvent[], avoided: boolean): void {
 export function createGame(opts: NewGameOptions): Transition {
   const seed = opts.seed >>> 0;
   const rules: RulesOptions = { ...DEFAULT_RULES, ...stripUndefined(opts.rules ?? {}) };
+  if (opts.deck !== undefined) notImplemented('createGame({ deck })', 'Tyrol');
   const rng = (opts.rngFactory ?? createRng)(seed);
   const deck = shuffle(buildDeck(), rng);
 
