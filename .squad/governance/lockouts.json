@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "subjects": [
+    {
+      "subject": "rules-tests",
+      "paths": [
+        "tests/unit/scoring.test.ts",
+        "tests/unit/fuzz.test.ts"
+      ],
+      "state": "cleared",
+      "lockedAuthors": [
+        "tigh"
+      ],
+      "reviewer": "adama",
+      "reason": "Missing death-on-room-completion event-order tests (mutation emitting RoomCleared before GameLost passed all tests); fuzz search tier runs 3.5-4.5s against Vitest 5s default timeout. Clears when both are fixed and Adama re-approves.",
+      "overrides": [],
+      "updatedAt": "2026-11-20T17:20:45.180Z",
+      "successor": "gaeta"
+    },
+    {
+      "subject": "fx-director",
+      "paths": [
+        "src/fx/director.ts",
+        "src/fx/director.test.ts"
+      ],
+      "state": "cleared",
+      "lockedAuthors": [
+        "gaeta"
+      ],
+      "reviewer": "adama",
+      "reason": "3 visible held-card timing bugs: dealt cards freeze mid-air during RoomRevealed takeover; equip-discard ghosts duplicated and released before fade-out; killing monster pops out after GameLost. Clears when all three are fixed with frame-level regression tests and Adama re-approves.",
+      "overrides": [],
+      "updatedAt": "2026-11-20T17:22:15.384Z",
+      "successor": "tyrol"
+    },
+    {
+      "subject": "render-ui",
+      "paths": [
+        "src/render/**",
+        "src/ui/**",
+        "src/main.ts"
+      ],
+      "state": "cleared",
+      "lockedAuthors": [
+        "starbuck"
+      ],
+      "reviewer": "adama",
+      "reason": "(1) 2D fallback renders black when WebGL context is acquired but shader compile/link fails; (2) render re-derives game rules (hint 3-per-room, LETHAL, card kind via artKind) instead of reading selectView fields. Clears when both fixed with a forced-shader-failure check and Adama re-approves.",
+      "overrides": [],
+      "updatedAt": "2026-11-20T17:34:17.207Z",
+      "successor": "tyrol"
+    },
+    {
+      "subject": "tutorial-machine",
+      "paths": [
+        "src/tutorial/machine.ts",
+        "src/tutorial/machine.test.ts"
+      ],
+      "state": "cleared",
+      "lockedAuthors": [
+        "tyrol"
+      ],
+      "reviewer": "adama",
+      "reason": "GameWon batch on a non-matching step leaves machine in coaching (stuck); spec requires any GameWon batch -> recap. Clears when fixed with regression test and Adama re-approves.",
+      "overrides": [],
+      "updatedAt": "2026-11-20T21:01:09.047Z",
+      "successor": "gaeta"
+    },
+    {
+      "subject": "tutorial-ui",
+      "paths": [
+        "src/ui/**",
+        "src/render/**",
+        "index.html"
+      ],
+      "state": "cleared",
+      "lockedAuthors": [
+        "starbuck"
+      ],
+      "reviewer": "gaeta",
+      "reason": "#coach-live reports data-ready=true with the finished step id for 127-216ms after animated steps; clear by deriving ready from live (non-latched) chrome + regression check failing on current code",
+      "overrides": [],
+      "updatedAt": "2026-11-20T21:59:01.933Z",
+      "successor": "tyrol"
+    },
+    {
+      "subject": "run-save",
+      "paths": [
+        "src/ui/save.ts",
+        "tests/unit/save.test.ts"
+      ],
+      "state": "author-locked",
+      "lockedAuthors": [
+        "starbuck"
+      ],
+      "reviewer": "tigh",
+      "reason": "save.test.ts misses 4 contract cases (M3,M4,M5,M12,M13 survive); add tests 1-4 from Tigh's review, src unchanged",
+      "overrides": [],
+      "updatedAt": "2026-11-20T21:59:02.687Z"
+    }
+  ]
+}

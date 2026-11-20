@@ -14,7 +14,6 @@ import type { GameEvent } from './events';
 import { DEFAULT_RULES } from './state';
 import type { FightMode, GameState, RulesOptions } from './state';
 import { createRng, shuffle } from './rng';
-import { notImplemented } from './notImplemented';
 import type { RngFactory, Seed } from './rng';
 
 export interface NewGameOptions {
@@ -147,13 +146,11 @@ function revealNewRoom(d: Draft, events: GameEvent[], avoided: boolean): void {
 // Public API
 // ---------------------------------------------------------------------------------------------
 
-/** Build + shuffle the deck, deal the first room. Emits GameStarted, CardDealt x4, RoomRevealed. */
+/** Build + shuffle the deck (or use opts.deck as given), deal the first room. Emits GameStarted, CardDealt x4, RoomRevealed. */
 export function createGame(opts: NewGameOptions): Transition {
   const seed = opts.seed >>> 0;
   const rules: RulesOptions = { ...DEFAULT_RULES, ...stripUndefined(opts.rules ?? {}) };
-  if (opts.deck !== undefined) notImplemented('createGame({ deck })', 'Tyrol');
-  const rng = (opts.rngFactory ?? createRng)(seed);
-  const deck = shuffle(buildDeck(), rng);
+  const deck = opts.deck !== undefined ? scriptedDeck(opts.deck) : shuffle(buildDeck(), (opts.rngFactory ?? createRng)(seed));
 
   const d: Draft = {
     version: 1,
@@ -176,6 +173,20 @@ export function createGame(opts: NewGameOptions): Transition {
   const events: GameEvent[] = [{ type: 'GameStarted', seed, hp: d.hp, deckSize: deck.length }];
   revealNewRoom(d, events, false);
   return { state: freezeDraft(d), events };
+}
+
+/**
+ * Validate and copy a caller-supplied deck (NewGameOptions.deck). No shuffle, no RNG call.
+ * Throws RangeError on an empty deck or duplicate card ids: that is a programming error, not player input.
+ */
+function scriptedDeck(deck: readonly Card[]): Card[] {
+  if (deck.length === 0) throw new RangeError('createGame({ deck }): deck must not be empty');
+  const seen = new Set<CardId>();
+  for (const card of deck) {
+    if (seen.has(card.id)) throw new RangeError(`createGame({ deck }): duplicate card id ${card.id}`);
+    seen.add(card.id);
+  }
+  return deck.slice();
 }
 
 function stripUndefined<T extends object>(o: T): Partial<T> {

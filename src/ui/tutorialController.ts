@@ -1,7 +1,7 @@
 /**
  * App-side adapter between the pure tutorial step machine (src/tutorial, Tyrol) and the app shell.
  * CONTRACT (Design Review 2). Impl owner: Starbuck (owns src/ui and the app.ts integration).
- * NOT wired into app.ts yet: the stub throws, and nothing constructs it, so normal play is unaffected.
+ * Wired into app.ts (Design Review 2 integration, Starbuck).
  *
  * The controller holds TutorialState, applies the gate before the app dispatches, feeds accepted batches and
  * violations back to the machine, and latches the coach view while FX is presenting (docs/TUTORIAL.md "FX timing").
@@ -18,8 +18,8 @@
  *     persistence of tutorialSeen (the app stays the single Settings writer).
  */
 import type { GameAction, GameEvent, GameSession, GameState, RuleViolation } from '../game';
-import type { GateResult, TutorialChrome, TutorialQuery, TutorialStepId } from '../tutorial';
-import { notImplemented } from '../notImplemented';
+import { advance, currentStep, gate, startTutorial, tutorialChrome, tutorialGameOptions } from '../tutorial';
+import type { GateResult, TutorialChrome, TutorialInput, TutorialQuery, TutorialState, TutorialStepId } from '../tutorial';
 
 /** Side effects the controller asks the app to perform (the app maps them to audio.play / fx.tutorialCue). */
 export type TutorialSignal =
@@ -59,5 +59,125 @@ export interface TutorialController {
 }
 
 export function createTutorialController(): TutorialController {
-  return notImplemented('createTutorialController', 'Starbuck');
+  let t: TutorialState | null = null;
+  let session: GameSession | null = null;
+  /** Chrome handed out on the previous chrome() call, and the copy frozen when FX went busy. */
+  let lastReturned: TutorialChrome | null = null;
+  let latched: TutorialChrome | null = null;
+  /** Key (phase/step/page) of the coach content last announced with coachShown/completed. */
+  let shownKey: string | null = null;
+  /** An action step completed; its success cue waits until the presentation catches up. */
+  let pendingSuccess: TutorialStepId | null = null;
+  const listeners = new Set<(signal: TutorialSignal) => void>();
+
+  const emit = (signal: TutorialSignal): void => {
+    for (const l of [...listeners]) {
+      try {
+        l(signal);
+      } catch (e) {
+        console.warn('[tutorial] signal listener failed', e);
+      }
+    }
+  };
+
+  /** Feed the machine and note whether an action step just completed (for the success chime). */
+  const feed = (input: TutorialInput, successOnComplete: boolean): void => {
+    if (!t) return;
+    const before = t;
+    const step = before.phase === 'coaching' ? currentStep(before) : null;
+    t = advance(before, input);
+    const completed = t.stepIndex !== before.stepIndex || (before.phase === 'coaching' && t.phase === 'recap');
+    if (completed && successOnComplete && step && step.until.kind !== 'next') pendingSuccess = step.id;
+  };
+
+  const reset = (): void => {
+    lastReturned = null;
+    latched = null;
+    shownKey = null;
+    pendingSuccess = null;
+  };
+
+  const controller: TutorialController = {
+    get active() {
+      return t !== null;
+    },
+
+    start(s) {
+      session = s;
+      // Machine off while the opening deal broadcasts: those events belong to no step.
+      t = null;
+      reset();
+      s.newGame(tutorialGameOptions());
+      t = startTutorial();
+    },
+
+    exit() {
+      t = null;
+      session = null;
+      reset();
+    },
+
+    gate(query, state) {
+      if (!t) return { allowed: true };
+      return gate(t, state, query);
+    },
+
+    block(nudge) {
+      if (!t) return;
+      t = advance(t, { type: 'blocked', nudge });
+      emit({ type: 'nudged', serial: t.nudgeSerial });
+    },
+
+    onEvents(events, state) {
+      feed({ type: 'events', events, state }, true);
+    },
+
+    onViolation(action, violation, state) {
+      void action;
+      // The one scripted refusal (avoiding twice) is the lesson itself: the engine's denied buzz plays, so no
+      // success chime on top of it.
+      feed({ type: 'violation', violation, state }, false);
+    },
+
+    next() {
+      if (!t) return;
+      if (t.phase === 'desynced') {
+        // advance() ignores NEXT once desynced; restarting is the controller's job.
+        if (session) controller.start(session);
+        return;
+      }
+      feed({ type: 'next' }, false);
+    },
+
+    chrome(fxBusy) {
+      if (!t || !session) return null;
+      if (fxBusy) {
+        // Freeze what the player saw before this batch started presenting.
+        if (!latched) latched = lastReturned ?? tutorialChrome(t, session.state);
+        lastReturned = latched;
+        return latched;
+      }
+      latched = null;
+      const live = tutorialChrome(t, session.state);
+      const key = live.phase === 'recap' ? 'recap' : `${live.phase}:${live.coach?.stepId ?? ''}:${live.coach?.page ?? 0}`;
+      lastReturned = live;
+      if (key !== shownKey) {
+        shownKey = key;
+        const success = pendingSuccess;
+        pendingSuccess = null;
+        if (success) emit({ type: 'stepSucceeded', stepId: success });
+        if (live.phase === 'recap') emit({ type: 'completed' });
+        else if (live.coach) emit({ type: 'coachShown', stepId: live.coach.stepId, page: live.coach.page });
+      }
+      return live;
+    },
+
+    onSignal(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+  return controller;
 }

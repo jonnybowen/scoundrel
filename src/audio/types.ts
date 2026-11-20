@@ -10,6 +10,7 @@ import { createAudioEngineImpl, type AudioEngineOptions } from './engine';
 import type { GameEvent } from '../game';
 
 export type SfxId =
+  | TutorialSfxId
   | 'deal'
   | 'flip'
   | 'hitLight'
@@ -27,9 +28,10 @@ export type SfxId =
   | 'lose';
 
 /**
- * Design Review 2 (Gaeta): tutorial SFX. Merge into SfxId when the voices land in synth.ts (SFX is an exhaustive
- * Record<SfxId, ...>, so they live here until then). Played by ui/app from TutorialController signals, not FxCues:
+ * Design Review 2 (Gaeta): tutorial SFX, merged into SfxId (voices in synth.ts), so audio.play('coachBlip') works.
+ * Played by ui/app from TutorialController signals, not FxCues:
  *  - coachBlip: soft two-note blip when new coach text or a nudge appears (quiet, under uiClick level).
+ *    Nudges play it with { pitch: 0.8 } (never uiDenied).
  *  - stepSuccess: short rising chime when an action step completes (distinct from roomClear and win).
  *  - tutorialComplete: brief fanfare on the recap screen (shorter than win; win still plays on GameWon).
  */

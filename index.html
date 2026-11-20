@@ -9,10 +9,13 @@
       html, body { margin: 0; height: 100%; background: #0b0b12; overflow: hidden; touch-action: none; }
       #app { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
       #screen { image-rendering: pixelated; image-rendering: crisp-edges; max-width: 100%; max-height: 100%; }
+      .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
     </style>
   </head>
   <body>
     <div id="app"><canvas id="screen" aria-label="Scoundrel game board"></canvas></div>
+    <!-- Tutorial coach mirror for screen readers (and the e2e hook). Empty outside the tutorial. -->
+    <div id="coach-live" class="visually-hidden" aria-live="polite"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

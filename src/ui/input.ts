@@ -26,7 +26,7 @@ export function targetToIntent(target: HitTarget | null, view: GameView): UiInte
         case 'volDown': return { type: 'changeVolume', delta: -0.1 };
         case 'volUp': return { type: 'changeVolume', delta: 0.1 };
         case 'closeMenu': return { type: 'closeSettings' };
-        // Design Review 2 tutorial buttons (only laid out once the tutorial is wired).
+        // Design Review 2 tutorial buttons.
         case 'tutorial': return { type: 'tutorialStart' };
         case 'tutorialAccept': return { type: 'tutorialStart' };
         case 'tutorialDecline': return { type: 'tutorialDecline' };
@@ -39,18 +39,45 @@ export function targetToIntent(target: HitTarget | null, view: GameView): UiInte
 }
 
 /** Keyboard: 1-4 slot, W/B fight choice, A avoid, Enter enter/start, M mute, N new game, S settings, C CRT,
- *  Esc cancel/close, Space skip. */
+ *  Esc cancel/close, Space skip. Tutorial (docs/TUTORIAL.md "Keyboard map"): T start (title), Enter accept (offer) /
+ *  NEXT when shown / play a real run (recap), ArrowRight NEXT, X leave, R replay (recap), Esc decline (offer) /
+ *  title (recap). N is ignored while the tutorial runs. */
 export function keyToIntent(key: string, view: GameView): UiIntent | null {
   const k = key.length === 1 ? key.toLowerCase() : key;
   const menu = view.chrome.menuOpen;
   const title = view.chrome.screen === 'title';
-  if (k === 'Escape') return menu ? { type: 'closeSettings' } : view.pendingFight ? { type: 'cancel' } : null;
+  const offer = title && view.chrome.tutorialOffer === true;
+  const tutorial = !title ? view.chrome.tutorial ?? null : null;
+  const recap = tutorial?.phase === 'recap';
+  if (k === 'Escape') {
+    if (menu) return { type: 'closeSettings' };
+    if (offer) return { type: 'tutorialDecline' };
+    if (view.pendingFight) return { type: 'cancel' };
+    if (recap) return { type: 'tutorialSkip' };
+    return null;
+  }
   if (k === 'm') return { type: 'toggleMute' };
   if (k === 'c') return { type: 'toggleCrt' };
   if (k === 's') return menu ? { type: 'closeSettings' } : { type: 'openSettings' };
   if (menu) return null;
+  if (offer) return k === 'Enter' || k === 't' ? { type: 'tutorialStart' } : null;
+  if (title) {
+    if (k === 't') return { type: 'tutorialStart' };
+    return k === 'Enter' || k === ' ' || k === 'n' ? { type: 'newGame' } : null;
+  }
+  if (tutorial) {
+    if (k === 'x') return { type: 'tutorialSkip' };
+    if (k === 'n') return null;
+    if (recap) {
+      if (k === 'Enter') return { type: 'tutorialPlayReal' };
+      if (k === 'r') return { type: 'tutorialStart' };
+      return null;
+    }
+    const showNext = tutorial.coach?.showNext === true;
+    if (k === 'ArrowRight') return showNext ? { type: 'tutorialNext' } : null;
+    if (k === 'Enter' && showNext) return { type: 'tutorialNext' };
+  }
   if (k === 'n') return { type: 'newGame' };
-  if (title) return k === 'Enter' || k === ' ' ? { type: 'newGame' } : null;
   // Result screen: Enter only (Space is the skip key and is often mashed during the final animation).
   if (view.chrome.showResult) return k === 'Enter' ? { type: 'newGame' } : null;
   if (k === ' ') return { type: 'skip' };

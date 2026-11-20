@@ -1,0 +1,10 @@
+{
+  "appId": "com.scoundrel.game",
+  "appName": "Scoundrel",
+  "webDir": "dist",
+  "backgroundColor": "#0b0b12",
+  "android": {
+    "backgroundColor": "#0b0b12",
+    "allowMixedContent": false
+  }
+}

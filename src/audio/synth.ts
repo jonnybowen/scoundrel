@@ -193,4 +193,31 @@ export const SFX: Readonly<Record<SfxId, (v: Voice) => number>> = {
     noise(v, { dur: 0.5, gain: 0.3, filter: 'lowpass', f0: 600, f1: 80 });
     return 1.6;
   },
+  // ---- Design Review 2: tutorial voices. Kept soft and short so they sit under game SFX.
+  coachBlip: (v) => {
+    // Soft two-note "bip-bup" (sine + quiet triangle body). Peak gain stays under uiClick (0.08).
+    tone(v, { type: 'sine', f0: N(81), dur: 0.05, gain: 0.06, attack: 0.006 });
+    tone(v, { type: 'triangle', f0: N(81), dur: 0.04, gain: 0.025, attack: 0.006 });
+    tone(v, { type: 'sine', f0: N(88), at: 0.055, dur: 0.07, gain: 0.05, attack: 0.006 });
+    return 0.13;
+  },
+  stepSuccess: (v) => {
+    // Short rising chime: a perfect fifth then octave on a bell-ish triangle, a glassy sine shimmer on top.
+    // Distinct from roomClear (two squares) and heal (four-note triangle arpeggio).
+    tone(v, { type: 'triangle', f0: N(79), dur: 0.08, gain: 0.14 });
+    tone(v, { type: 'triangle', f0: N(86), at: 0.06, dur: 0.1, gain: 0.14 });
+    tone(v, { type: 'triangle', f0: N(91), at: 0.12, dur: 0.22, gain: 0.13 });
+    tone(v, { type: 'sine', f0: N(103), at: 0.12, dur: 0.24, gain: 0.04, detune: 6 });
+    return 0.36;
+  },
+  tutorialComplete: (v) => {
+    // Small fanfare: a pickup triplet into a held major chord with a bass root; shorter and lighter than win.
+    [74, 74, 79].forEach((m, i) => tone(v, { type: 'square', f0: N(m), at: i * 0.075, dur: 0.06, gain: 0.06 }));
+    tone(v, { type: 'square', f0: N(83), at: 0.24, dur: 0.12, gain: 0.06 });
+    tone(v, { type: 'square', f0: N(86), at: 0.38, dur: 0.45, gain: 0.06 });
+    tone(v, { type: 'triangle', f0: N(91), at: 0.38, dur: 0.45, gain: 0.08 });
+    tone(v, { type: 'triangle', f0: N(43), at: 0.38, dur: 0.5, gain: 0.22 });
+    tone(v, { type: 'sine', f0: N(98), at: 0.42, dur: 0.4, gain: 0.03 });
+    return 0.9;
+  },
 };

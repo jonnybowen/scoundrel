@@ -16,6 +16,13 @@ import { cardBack, cardFace, cardShape, drawIcon, parseCardId, rankLabel, type I
 import { createCrtPass, warpUv, type CrtPass } from './crt';
 import { drawText, drawTextOutline, drawTextShadow, measureText } from './font';
 import { frameFor, menuRows } from './layout';
+import { BTN, button, panel, type ButtonStyle } from './widgets';
+import { drawCoach, drawOffer, drawRecap, drawSpotlight } from './coach';
+
+/** Tutorial buttons that coach.ts draws inside its own panels (drawButtons skips them). */
+const COACH_DRAWN: ReadonlySet<ButtonId> = new Set<ButtonId>([
+  'tutorialAccept', 'tutorialDecline', 'tutorialNext', 'tutorialPlayReal', 'tutorialReplay',
+]);
 import { CARD_H, CARD_W, DEFAULT_CRT, PAL, SWIRL_A, SWIRL_B, SWIRL_C, logicalSize } from './theme';
 
 type Ctx = CanvasRenderingContext2D;
@@ -114,14 +121,6 @@ class Background {
 // -------------------------------------------------------------------------------------------------------
 // Primitives.
 
-function panel(ctx: Ctx, r: Rect, fill: string = PAL.panel, edge: string = PAL.panelEdge, alpha = 0.85): void {
-  ctx.globalAlpha = alpha;
-  cardShape(ctx, r.x, r.y, r.w, r.h, PAL.ink);
-  cardShape(ctx, r.x + 1, r.y + 1, r.w - 2, r.h - 2, edge);
-  cardShape(ctx, r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
-  ctx.globalAlpha = 1;
-}
-
 function slotOutline(ctx: Ctx, r: Rect, color: string = PAL.panelEdge): void {
   ctx.fillStyle = color;
   for (let x = r.x + 2; x < r.x + r.w - 2; x += 4) {
@@ -132,49 +131,6 @@ function slotOutline(ctx: Ctx, r: Rect, color: string = PAL.panelEdge): void {
     ctx.fillRect(r.x, y, 1, 2);
     ctx.fillRect(r.x + r.w - 1, y, 1, 2);
   }
-}
-
-interface ButtonStyle {
-  readonly fill: string;
-  readonly dark: string;
-  readonly text?: string;
-}
-
-const BTN: Record<string, ButtonStyle> = {
-  orange: { fill: PAL.orange, dark: PAL.orangeDark },
-  blue: { fill: PAL.blue, dark: PAL.blueDark },
-  red: { fill: PAL.red, dark: PAL.redDark },
-  green: { fill: PAL.green, dark: PAL.greenDark },
-  grey: { fill: PAL.greyDark, dark: '#2c2840', text: PAL.grey },
-  panel: { fill: PAL.panelHi, dark: PAL.panel },
-};
-
-function button(ctx: Ctx, r: Rect, label: string, style: ButtonStyle, hovered: boolean, icon?: IconId): void {
-  const lift = hovered ? 1 : 0;
-  const x = r.x;
-  const y = r.y - lift;
-  // Hard shadow, body, darker lip, top highlight.
-  ctx.fillStyle = PAL.shadow;
-  cardShape(ctx, x + 1, r.y + 2, r.w, r.h, PAL.shadow);
-  cardShape(ctx, x, y, r.w, r.h, PAL.ink);
-  cardShape(ctx, x + 1, y + 1, r.w - 2, r.h - 2, style.dark);
-  cardShape(ctx, x + 1, y + 1, r.w - 2, r.h - 4, hovered ? lighten(style.fill) : style.fill);
-  ctx.fillStyle = 'rgba(255,255,255,0.25)';
-  ctx.fillRect(x + 3, y + 2, r.w - 6, 1);
-  const textColor = style.text ?? PAL.white;
-  const iconW = icon ? 7 : 0;
-  const scale = r.h >= 22 && measureText(label, 2) + iconW + 8 <= r.w ? 2 : 1;
-  const tw = measureText(label, scale) + iconW;
-  const tx = Math.round(x + (r.w - tw) / 2);
-  const ty = Math.round(y + (r.h - 2 - 5 * scale) / 2);
-  if (icon) drawIcon(ctx, icon, tx, Math.round(y + (r.h - 2 - 5) / 2), textColor);
-  if (label) drawTextShadow(ctx, label, tx + iconW, ty, textColor, scale);
-}
-
-function lighten(hex: string): string {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (c: number): number => Math.min(255, Math.round(c + (255 - c) * 0.25));
-  return `rgb(${f((n >> 16) & 255)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 
 function hpColor(hp: number, max: number): string {
@@ -388,54 +344,55 @@ export function createCanvasRenderer(): Renderer {
     const pending = view.pendingFight ? view.room.find((rc) => rc?.card.id === view.pendingFight) : undefined;
     switch (id) {
       case 'avoid':
-        return { label: 'AVOID', style: view.canAvoid ? BTN.orange! : BTN.grey! };
+        return { label: 'AVOID', style: view.canAvoid ? BTN.orange : BTN.grey };
       case 'enter':
-        return { label: 'ENTER', style: BTN.green! };
+        return { label: 'ENTER', style: BTN.green };
       case 'fightWeapon':
-        return { label: `-${pending?.damageWithWeapon ?? 0}`, style: BTN.blue!, icon: 'sword' };
+        return { label: `-${pending?.damageWithWeapon ?? 0}`, style: BTN.blue, icon: 'sword' };
       case 'fightBarehanded':
-        return { label: `-${pending?.damageBarehanded ?? 0}`, style: BTN.red!, icon: 'fist' };
+        return { label: `-${pending?.damageBarehanded ?? 0}`, style: BTN.red, icon: 'fist' };
       case 'cancel':
-        return { label: 'CANCEL', style: BTN.grey! };
+        return { label: 'CANCEL', style: BTN.grey };
       case 'newGame':
-        if (view.chrome.menuOpen) return { label: 'RESTART RUN', style: BTN.red! };
-        return { label: view.chrome.screen === 'title' ? 'PLAY' : 'NEW RUN', style: BTN.green! };
+        if (view.chrome.menuOpen) return { label: 'RESTART RUN', style: BTN.red };
+        return { label: view.chrome.screen === 'title' ? 'PLAY' : 'NEW RUN', style: BTN.green };
       case 'mute':
-        if (view.chrome.menuOpen) return { label: `SOUND: ${s.muted ? 'OFF' : 'ON'}`, style: BTN.panel! };
-        return { label: '', style: s.muted ? BTN.red! : BTN.panel!, icon: s.muted ? 'speakerOff' : 'speaker' };
+        if (view.chrome.menuOpen) return { label: `SOUND: ${s.muted ? 'OFF' : 'ON'}`, style: BTN.panel };
+        return { label: '', style: s.muted ? BTN.red : BTN.panel, icon: s.muted ? 'speakerOff' : 'speaker' };
       case 'settings':
-        return { label: '', style: BTN.panel!, icon: 'gear' };
+        return { label: '', style: BTN.panel, icon: 'gear' };
       case 'crt':
-        return { label: `CRT: ${s.crtEnabled ? 'ON' : 'OFF'}`, style: BTN.panel! };
+        return { label: `CRT: ${s.crtEnabled ? 'ON' : 'OFF'}`, style: BTN.panel };
       case 'motion':
-        return { label: `MOTION: ${s.reducedMotion ? 'LOW' : 'FULL'}`, style: BTN.panel! };
+        return { label: `MOTION: ${s.reducedMotion ? 'LOW' : 'FULL'}`, style: BTN.panel };
       case 'volDown':
-        return { label: '-', style: BTN.blue! };
+        return { label: '-', style: BTN.blue };
       case 'volUp':
-        return { label: '+', style: BTN.blue! };
+        return { label: '+', style: BTN.blue };
       case 'closeMenu':
-        return { label: 'BACK', style: BTN.green! };
+        return { label: 'BACK', style: BTN.green };
       // Design Review 2 tutorial buttons (labels per docs/TUTORIAL.md; never laid out until Starbuck wires them).
       case 'tutorial':
-        return { label: 'TUTORIAL', style: BTN.blue! };
+        return { label: 'TUTORIAL', style: BTN.blue };
       case 'tutorialAccept':
-        return { label: 'TEACH ME', style: BTN.green! };
+        return { label: 'TEACH ME', style: BTN.green };
       case 'tutorialDecline':
-        return { label: 'I KNOW THE RULES', style: BTN.grey! };
+        return { label: 'I KNOW THE RULES', style: BTN.grey };
       case 'tutorialNext':
-        return { label: 'NEXT', style: BTN.green! };
+        return { label: 'NEXT', style: BTN.green };
       case 'tutorialSkip':
-        return { label: view.chrome.menuOpen ? 'LEAVE TUTORIAL' : 'SKIP', style: view.chrome.menuOpen ? BTN.red! : BTN.grey! };
+        return { label: view.chrome.menuOpen ? 'LEAVE TUTORIAL' : 'SKIP', style: view.chrome.menuOpen ? BTN.red : BTN.grey };
       case 'tutorialPlayReal':
-        return { label: 'PLAY A REAL RUN', style: BTN.green! };
+        return { label: 'PLAY A REAL RUN', style: BTN.green };
       case 'tutorialReplay':
-        return { label: 'REPLAY TUTORIAL', style: BTN.panel! };
+        return { label: 'REPLAY TUTORIAL', style: BTN.panel };
     }
   };
 
   const drawButtons = (ctx: Ctx, view: GameView, layout: LayoutSnapshot): void => {
     const hover = view.chrome.hover;
     for (const [id, r] of layout.buttons) {
+      if (COACH_DRAWN.has(id) || (id === 'tutorialSkip' && !view.chrome.menuOpen)) continue;
       const { label, style, icon } = buttonLabel(id, view);
       const hovered = hover?.kind === 'button' && hover.id === id;
       button(ctx, r, label, style, hovered, icon);
@@ -563,7 +520,8 @@ export function createCanvasRenderer(): Renderer {
     drawButtons(ctx, view, layout);
     if (!view.chrome.menuOpen && !view.chrome.showResult) drawTooltip(ctx, view, layout, lw);
 
-    const hint = hintText(view);
+    // The coach panel replaces the hint line while the tutorial runs.
+    const hint = view.chrome.tutorial ? '' : hintText(view);
     if (hint && !view.chrome.showResult) {
       const hy = portrait ? 210 : 232;
       const hx = portrait ? lw / 2 : 240;
@@ -633,9 +591,10 @@ export function createCanvasRenderer(): Renderer {
 
     drawButtons(ctx, view, layout);
     const play = layout.buttons.get('newGame');
-    if (play && !view.chrome.menuOpen) {
-      if (still || Math.floor(t / 500) % 2 === 0) drawTextShadow(ctx, 'PRESS ENTER', lw / 2, play.y + play.h + 6, PAL.grey, 1, 'center');
-      if (view.chrome.error) drawTextShadow(ctx, view.chrome.error.toUpperCase().slice(0, 60), lw / 2, play.y + play.h + 18, PAL.red, 1, 'center');
+    const below = layout.buttons.get('tutorial') ?? play;
+    if (play && below && !view.chrome.menuOpen) {
+      if (still || Math.floor(t / 500) % 2 === 0) drawTextShadow(ctx, 'ENTER: PLAY    T: TUTORIAL', lw / 2, below.y + below.h + 6, PAL.grey, 1, 'center');
+      if (view.chrome.error) drawTextShadow(ctx, view.chrome.error.toUpperCase().slice(0, 60), lw / 2, below.y + below.h + 16, PAL.red, 1, 'center');
     }
     drawTextShadow(ctx, 'RULES BY ZACH GAGE AND KURT BIEG', lw / 2, lh - 12, PAL.greyDark, 1, 'center');
   };
@@ -667,10 +626,11 @@ export function createCanvasRenderer(): Renderer {
     drawTextShadow(ctx, 'M MUTE  C CRT  ESC BACK', lw / 2, f.menu.y + f.menu.h - 10, PAL.greyDark, 1, 'center');
   };
 
-  const drawToast = (ctx: Ctx, text: string, lw: number, portrait: boolean): void => {
+  const drawToast = (ctx: Ctx, text: string, lw: number, layout: LayoutSnapshot): void => {
     const w = measureText(text) + 14;
     const x = Math.round(lw / 2 - w / 2);
-    const y = portrait ? 428 : 246;
+    // In the tutorial the coach strip owns the bottom of the screen: the toast floats just above it.
+    const y = layout.coach ? layout.coach.y - 15 : layout.orientation === 'portrait' ? 428 : 246;
     ctx.fillStyle = PAL.ink;
     ctx.fillRect(x, y, w, 13);
     ctx.fillStyle = PAL.redDark;
@@ -714,9 +674,19 @@ export function createCanvasRenderer(): Renderer {
       else drawGame(ctx, view, layout, fx, timeMs, still, lw, lh);
       ctx.restore();
 
+      // Tutorial overlays are driven by chrome.tutorial alone (FxFrame.coach only animates them).
+      const tutorial = view.chrome.screen === 'game' ? view.chrome.tutorial ?? null : null;
+      const recap = tutorial?.phase === 'recap';
+      if (tutorial && !recap) {
+        drawSpotlight(ctx, view, layout, fx);
+        drawCoach(ctx, view, layout, fx, timeMs);
+      }
+
       if (view.chrome.menuOpen) drawMenu(ctx, view, layout, lw, lh);
-      else if (view.chrome.screen === 'game' && view.chrome.showResult) drawResult(ctx, view, layout, lw, lh);
-      if (view.chrome.toast) drawToast(ctx, view.chrome.toast, lw, layout.orientation === 'portrait');
+      else if (recap) drawRecap(ctx, view, layout);
+      else if (view.chrome.screen === 'game' && view.chrome.showResult && !tutorial) drawResult(ctx, view, layout, lw, lh);
+      else if (view.chrome.screen === 'title' && view.chrome.tutorialOffer) drawOffer(ctx, view, layout);
+      if (view.chrome.toast) drawToast(ctx, view.chrome.toast, lw, layout);
 
       // Top-right utility buttons are drawn in drawButtons; draw a hover hint for them.
       if (fx.screenFlash && fx.screenFlash.alpha > 0) {
@@ -747,6 +717,11 @@ export function createCanvasRenderer(): Renderer {
       const y = v * lh;
       for (const [id, r] of layout.buttons) if (contains(r, x, y)) return { kind: 'button', id };
       if (layout.buttons.has('closeMenu') || layout.buttons.has('newGame')) return null;
+      // Tutorial: modal recap / offer swallow taps; on the coach strip a tap anywhere counts as NEXT when shown.
+      if (layout.buttons.has('tutorialPlayReal') || layout.buttons.has('tutorialAccept')) return null;
+      if (layout.coach && contains(layout.coach, x, y)) {
+        return layout.buttons.has('tutorialNext') ? { kind: 'button', id: 'tutorialNext' } : null;
+      }
       const f = frameFor(layout.orientation);
       const entries = [...layout.cards.entries()].reverse();
       for (const [cardId, r] of entries) {

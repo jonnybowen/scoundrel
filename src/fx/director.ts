@@ -19,7 +19,8 @@
  */
 import type { Card, CardId, GameEvent } from '../game';
 import type { LayoutSnapshot, Rect } from '../ui/view';
-import type { CardTransform, FxCue, FxDirector, FxFrame } from './types';
+import type { CardTransform, FxCue, FxDirector, FxFrame, TutorialFxCue } from './types';
+import { createCoachFxTrack } from './coach';
 import {
   approach,
   backOut,
@@ -215,6 +216,11 @@ export class Director implements FxDirector, FxHover {
 
   private current: FxFrame = EMPTY_FRAME;
 
+  // Design Review 2: cosmetic tutorial overlay track. Independent of the queue; never affects isBusy().
+  private readonly coach = createCoachFxTrack();
+  /** FxFrame.coach is only present once the app has sent a tutorial cue (normal play frames are unchanged). */
+  private coachOn = false;
+
   // ---------------------------------------------------------------- public API
 
   enqueue(events: readonly GameEvent[]): void {
@@ -254,6 +260,7 @@ export class Director implements FxDirector, FxHover {
     }
     this.updateEffects(dt);
     this.updateHover(dt);
+    this.coach.update(dt);
     this.refreshSettled();
     this.current = this.buildFrame();
   }
@@ -275,7 +282,7 @@ export class Director implements FxDirector, FxHover {
     this.popups = [];
     this.hudHp = undefined;
     this.hudScore = undefined;
-    this.current = this.layout ? this.buildFrame() : { ...EMPTY_FRAME, cards: this.lockedCards() };
+    this.current = this.layout ? this.buildFrame() : this.withCoach({ ...EMPTY_FRAME, cards: this.lockedCards() });
   }
 
   onCue(listener: (cue: FxCue) => void): () => void {
@@ -287,6 +294,7 @@ export class Director implements FxDirector, FxHover {
 
   setReducedMotion(on: boolean): void {
     this.reduced = on;
+    this.coach.setReducedMotion(on);
     if (on) {
       this.trauma = 0;
       this.flash = null;
@@ -296,6 +304,17 @@ export class Director implements FxDirector, FxHover {
 
   setHover(cardId: CardId | null): void {
     this.hoverTarget = cardId;
+  }
+
+  tutorialCue(cue: TutorialFxCue): void {
+    // Cosmetic only: no queue, no steps, no cues, no effect on isBusy() or game-event timing.
+    this.coachOn = true;
+    this.coach.cue(cue);
+    this.current = this.withCoach(this.current);
+  }
+
+  private withCoach(frame: FxFrame): FxFrame {
+    return this.coachOn ? { ...frame, coach: this.coach.value() } : frame;
   }
 
   // ---------------------------------------------------------------- scheduling
@@ -636,7 +655,7 @@ export class Director implements FxDirector, FxHover {
         color: p.color,
       };
     });
-    return { cards, shake, screenFlash, hud, popups, crtPulse: this.crt };
+    return this.withCoach({ cards, shake, screenFlash, hud, popups, crtPulse: this.crt });
   }
 
   // ---------------------------------------------------------------- event -> step

@@ -11,8 +11,11 @@
  */
 import { createSession } from '../game';
 import type { GameAction, GameSession, RuleViolation } from '../game';
+import type { TutorialQuery, TutorialChrome } from '../tutorial';
+import { createTutorialController } from './tutorialController';
+import type { TutorialSignal } from './tutorialController';
 import { createAudioEngine } from '../audio/types';
-import type { AudioEngine, MusicId, SfxId } from '../audio/types';
+import type { AudioEngine, MusicId, PlayOptions, SfxId } from '../audio/types';
 import { createFxDirector } from '../fx/types';
 import type { FxDirector } from '../fx/types';
 import { computeLayout, createRenderer } from '../render/types';
@@ -81,8 +84,11 @@ export function createApp(opts: AppOptions): App {
     showResult: false,
     settings,
     error: null,
+    tutorial: null,
+    tutorialOffer: !settings.tutorialSeen,
   };
   let toastUntil = 0;
+  const tutorial = createTutorialController();
   let firstSeed = opts.seed;
 
   const renderer: Renderer = createRenderer();
@@ -96,7 +102,7 @@ export function createApp(opts: AppOptions): App {
       console.warn('[app]', e);
     }
   };
-  const sfx = (id: SfxId): void => safe(() => audio.play(id));
+  const sfx = (id: SfxId, opts?: PlayOptions): void => safe(() => audio.play(id, opts));
   let currentMusic: MusicId | null = null;
   const music = (id: MusicId | null): void => {
     if (id === currentMusic) return;
@@ -132,23 +138,61 @@ export function createApp(opts: AppOptions): App {
   safe(() => unsubscribers.push(fx.onCue(({ event }) => audio.handleEvent(event))));
   void audio.load().catch(() => undefined);
 
+  // Tutorial presentation signals (docs/TUTORIAL.md "Audio and FX cues"). Cosmetic only: never touches isBusy().
+  const onTutorialSignal = (sig: TutorialSignal): void => {
+    switch (sig.type) {
+      case 'coachShown':
+        sfx('coachBlip');
+        break;
+      case 'stepSucceeded':
+        sfx('stepSuccess');
+        break;
+      case 'nudged':
+        sfx('coachBlip', { pitch: 0.8 });
+        break;
+      case 'completed':
+        sfx('tutorialComplete');
+        music(null);
+        break;
+    }
+    safe(() => fx.tutorialCue?.(sig.type));
+  };
+  unsubscribers.push(tutorial.onSignal(onTutorialSignal));
+
+  /** Persist that the first-launch offer has been answered (the app is the single Settings writer). */
+  const markTutorialSeen = (): void => {
+    if (!settings.tutorialSeen) updateSettings({ tutorialSeen: true });
+  };
+
   // ----- session ---------------------------------------------------------------------------------------
 
   let session: GameSession | null = null;
 
+  const ensureSession = (seed: number): GameSession => {
+    if (session) return session;
+    const created = createSession({ seed });
+    // createSession does not broadcast its opening events: subscribe first, then newGame to get the deal.
+    // Integration point 2: the tutorial hears every accepted batch, after FX has queued it.
+    unsubscribers.push(
+      created.subscribe((events, state) => {
+        fx.enqueue(events);
+        if (tutorial.active) safe(() => tutorial.onEvents(events, state));
+      }),
+    );
+    session = created;
+    return created;
+  };
+
   const newGame = (seed?: number): void => {
     const s = seed ?? firstSeed ?? (Math.floor(Math.random() * 0x100000000) >>> 0);
     firstSeed = undefined;
+    tutorial.exit();
     try {
-      if (!session) {
-        session = createSession({ seed: s });
-        // createSession does not broadcast its opening events: subscribe first, then newGame to get the deal.
-        unsubscribers.push(session.subscribe((events) => fx.enqueue(events)));
-      }
+      const sess = ensureSession(s);
       // Finish whatever the previous run was still animating so its tweens/ghosts don't bleed into the new deal.
       safe(() => fx.skip());
-      session.newGame({ seed: s });
-      ui = { ...ui, screen: 'game', menuOpen: false, pendingFight: null, showResult: false, error: null, hover: null };
+      sess.newGame({ seed: s });
+      ui = { ...ui, screen: 'game', menuOpen: false, pendingFight: null, showResult: false, error: null, hover: null, tutorial: null };
       music('dungeon');
     } catch (e) {
       console.error('[app] could not start a game', e);
@@ -157,14 +201,56 @@ export function createApp(opts: AppOptions): App {
     }
   };
 
+  /** Integration point 1: the scripted tutorial dungeon (createGame({ deck })) instead of a shuffled one. */
+  const startTutorialRun = (): void => {
+    markTutorialSeen();
+    try {
+      const sess = ensureSession(firstSeed ?? 1);
+      safe(() => fx.skip());
+      tutorial.start(sess);
+      ui = { ...ui, screen: 'game', menuOpen: false, pendingFight: null, showResult: false, error: null, hover: null, toast: null };
+      music('dungeon');
+    } catch (e) {
+      console.error('[app] could not start the tutorial', e);
+      tutorial.exit();
+      ui = { ...ui, screen: 'title', error: 'TUTORIAL UNAVAILABLE', tutorial: null };
+    }
+  };
+
+  /** SKIP / X / LEAVE TUTORIAL / recap Esc: straight to the title, no confirmation. */
+  const leaveTutorial = (): void => {
+    markTutorialSeen();
+    tutorial.exit();
+    safe(() => fx.skip());
+    ui = { ...ui, screen: 'title', menuOpen: false, pendingFight: null, showResult: false, hover: null, toast: null, tutorial: null };
+    currentMusic = null;
+    music('title');
+  };
+
+  /**
+   * Integration point 3 (gate): may the player do this in the tutorial right now? A blocked move never reaches the
+   * engine: the coach shows a nudge with a soft blip. No toast, no uiDenied, no HP cost.
+   */
+  const tutorialAllows = (query: TutorialQuery): boolean => {
+    if (!tutorial.active || !session) return true;
+    const g = tutorial.gate(query, session.state);
+    if (g.allowed) return true;
+    tutorial.block(g.nudge);
+    return false;
+  };
+
   const dispatch = (action: GameAction): void => {
-    if (!session) return;
-    const res = session.dispatch(action);
+    const sess = session;
+    if (!sess) return;
+    if (!tutorialAllows(action)) return;
+    const res = sess.dispatch(action);
     if (res.ok) return;
     if (res.violation.code === 'modeRequired') {
       ui = { ...ui, pendingFight: res.violation.cardId };
       return;
     }
+    // The gate let it through and the engine refused: in the script only the avoid-twice lesson gets here.
+    if (tutorial.active) safe(() => tutorial.onViolation(action, res.violation, sess.state));
     sfx('uiDenied');
     const text = violationText(res.violation);
     if (text) showToast(text);
@@ -198,7 +284,21 @@ export function createApp(opts: AppOptions): App {
     }
   };
 
+  /** fx.isBusy() as passed to tutorial.chrome() by the last refresh(): true means the mirrored text is latched. */
+  let chromeLatched = false;
   const refresh = (): { view: GameView; layout: LayoutSnapshot } => {
+    // Integration point 4: coach chrome (latched while FX presents) and the first-launch offer.
+    let chrome: TutorialChrome | null = null;
+    // Whether this frame's coach text is the latched copy; #coach-live may only report ready for live text.
+    chromeLatched = fx.isBusy();
+    if (tutorial.active && ui.screen === 'game') {
+      try {
+        chrome = tutorial.chrome(chromeLatched);
+      } catch (e) {
+        console.error('[app] tutorial chrome failed', e);
+      }
+    }
+    ui = { ...ui, tutorial: chrome, tutorialOffer: ui.screen === 'title' && !settings.tutorialSeen };
     const view = buildView();
     const layout = computeLayout(view, viewport);
     lastView = view;
@@ -210,7 +310,7 @@ export function createApp(opts: AppOptions): App {
 
   const handle = (intent: UiIntent): void => {
     const view = lastView ?? refresh().view;
-    if (GAME_ACTIONS.has(intent.type) && fx.isBusy()) {
+    if ((GAME_ACTIONS.has(intent.type) || intent.type === 'tutorialNext') && fx.isBusy()) {
       fx.skip();
       return;
     }
@@ -235,6 +335,11 @@ export function createApp(opts: AppOptions): App {
           ui = { ...ui, pendingFight: null };
           return;
         }
+        // Gate the tap itself, before the weapon/fists choice opens (docs/TUTORIAL.md "Gating" rule 3).
+        if (!tutorialAllows({ type: 'select', cardId: intent.cardId })) {
+          ui = { ...ui, pendingFight: null };
+          return;
+        }
         const isMonster = rc.kind === 'monster';
         if (isMonster && rc.canUseWeapon) {
           sfx('uiClick');
@@ -248,8 +353,11 @@ export function createApp(opts: AppOptions): App {
       case 'chooseFight': {
         const id = view.pendingFight;
         if (!id) return;
+        const action: GameAction = { type: 'playCard', cardId: id, mode: intent.mode };
+        // A refused mode (fists on the lethal Ace) keeps the choice open so the player can pick the sword.
+        if (!tutorialAllows(action)) return;
         ui = { ...ui, pendingFight: null };
-        dispatch({ type: 'playCard', cardId: id, mode: intent.mode });
+        dispatch(action);
         return;
       }
       case 'cancel':
@@ -266,8 +374,29 @@ export function createApp(opts: AppOptions): App {
         dispatch({ type: 'avoidRoom' });
         return;
       case 'newGame':
+        if (tutorial.active) return; // N is ignored in the tutorial; a real run starts from the recap or the title.
         sfx('uiClick');
         newGame(intent.seed);
+        return;
+      // Integration point 5: tutorial intents (+ tutorialSeen persistence).
+      case 'tutorialStart':
+        sfx('uiClick');
+        startTutorialRun();
+        return;
+      case 'tutorialNext':
+        tutorial.next();
+        return;
+      case 'tutorialSkip':
+        leaveTutorial();
+        return;
+      case 'tutorialDecline':
+        sfx('uiClick');
+        markTutorialSeen();
+        return;
+      case 'tutorialPlayReal':
+        sfx('uiClick');
+        markTutorialSeen();
+        newGame();
         return;
       case 'toggleMute':
         updateSettings({ muted: !settings.muted });
@@ -333,7 +462,8 @@ export function createApp(opts: AppOptions): App {
     e.preventDefault();
     unlock();
     const target = targetAt(e);
-    const utility = target?.kind === 'button' && (target.id === 'mute' || target.id === 'settings' || ui.menuOpen);
+    const utility =
+      target?.kind === 'button' && (target.id === 'mute' || target.id === 'settings' || target.id === 'tutorialSkip' || ui.menuOpen);
     if (ui.screen === 'game' && fx.isBusy() && !utility) {
       fx.skip();
       return;
@@ -363,6 +493,47 @@ export function createApp(opts: AppOptions): App {
     renderer.resize(viewport);
   };
 
+  // ----- #coach-live (screen readers + e2e hook; docs/TUTORIAL.md "Accessibility and test hook") ----------
+
+  const coachLive = ((): HTMLElement | null => {
+    const doc = canvas.ownerDocument;
+    let el = doc.getElementById('coach-live');
+    if (!el && doc.body) {
+      el = doc.createElement('div');
+      el.id = 'coach-live';
+      el.setAttribute('aria-live', 'polite');
+      el.className = 'visually-hidden';
+      doc.body.appendChild(el);
+    }
+    return el;
+  })();
+  let coachLiveKey = '';
+  const mirrorCoach = (view: GameView): void => {
+    if (!coachLive) return;
+    const t = view.chrome.screen === 'game' ? view.chrome.tutorial ?? null : null;
+    // Ready = the text mirrored this frame is live (refresh() ran with FX idle, so not latched) AND FX is still idle,
+    // so the next key will be gated, not swallowed by skip. Checking only fx.isBusy() here (after fx.update) would
+    // flag the just-finished step's latched text as ready on the frame FX goes idle (docs/TUTORIAL.md).
+    const ready = t !== null && !chromeLatched && !fx.isBusy();
+    let text = '';
+    let attrs: [string, string][] = [];
+    if (t?.phase === 'recap' && t.recap) {
+      text = [t.recap.title, `SCORE ${t.recap.score}: ${t.recap.scoreText}`, ...t.recap.lines].join(' ');
+      attrs = [['data-phase', 'recap'], ['data-step', 'recap'], ['data-page', '0']];
+    } else if (t?.coach) {
+      const c = t.coach;
+      text = [`LESSON ${c.lesson} OF ${c.lessonCount}: ${c.title}.`, c.text, c.nudge ?? ''].filter((x) => x).join(' ');
+      attrs = [['data-phase', t.phase], ['data-step', c.stepId], ['data-page', String(c.page)]];
+    }
+    if (t) attrs.push(['data-ready', ready ? 'true' : 'false']);
+    const key = `${text}|${attrs.map((a) => a.join('=')).join(',')}`;
+    if (key === coachLiveKey) return;
+    coachLiveKey = key;
+    coachLive.textContent = text;
+    for (const a of ['data-phase', 'data-step', 'data-page', 'data-ready']) coachLive.removeAttribute(a);
+    for (const [k, v] of attrs) coachLive.setAttribute(k, v);
+  };
+
   // ----- frame loop ------------------------------------------------------------------------------------
 
   let raf = 0;
@@ -378,13 +549,15 @@ export function createApp(opts: AppOptions): App {
     try {
       if (ui.toast && t > toastUntil) ui = { ...ui, toast: null };
       const state = session?.state;
-      if (ui.screen === 'game' && state && (state.phase === 'won' || state.phase === 'lost') && !ui.showResult && !fx.isBusy()) {
+      // The tutorial shows its recap (from chrome.tutorial) instead of the normal result panel.
+      if (ui.screen === 'game' && !tutorial.active && state && (state.phase === 'won' || state.phase === 'lost') && !ui.showResult && !fx.isBusy()) {
         ui = { ...ui, showResult: true, pendingFight: null };
         music(state.phase === 'lost' ? 'gameOver' : null);
       }
       const { view, layout } = refresh();
       fx.update(dt, layout);
       renderer.draw(view, layout, fx.frame(), t);
+      mirrorCoach(view);
       errored = false;
     } catch (e) {
       if (!errored) console.error('[app] frame failed', e);
@@ -417,6 +590,7 @@ export function createApp(opts: AppOptions): App {
       window.removeEventListener('resize', onResize);
       window.visualViewport?.removeEventListener('resize', onResize);
       for (const off of unsubscribers.splice(0)) safe(off);
+      tutorial.exit();
       session = null;
       renderer.destroy();
       safe(() => audio.dispose());
