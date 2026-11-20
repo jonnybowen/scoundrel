@@ -8,13 +8,13 @@
  * Render is a pure function of (GameView, LayoutSnapshot, FxFrame). It holds no game logic and
  * never mutates game state. It may cache GPU resources keyed by CardId.
  */
-import { notImplemented } from '../notImplemented';
+import { computeLayout as computeLayoutImpl } from './layout';
+import { createCanvasRenderer } from './renderer';
 import type { FxFrame } from '../fx/types';
 import type { GameView, HitTarget, LayoutSnapshot } from '../ui/view';
 
-/** Logical canvas size (landscape). Portrait swaps to 180x320-style layout. Starbuck may tune; keep 16:9. */
-export const LOGICAL_WIDTH = 480;
-export const LOGICAL_HEIGHT = 270;
+/** Logical canvas size (landscape). Portrait swaps the axes to 270x480. Values live in theme.ts. */
+export { LOGICAL_WIDTH, LOGICAL_HEIGHT } from './theme';
 
 export interface Viewport {
   /** CSS pixel size of the display area. */
@@ -44,11 +44,12 @@ export interface Renderer {
   destroy(): void;
 }
 
+/** WebGL CRT renderer with automatic 2D-canvas fallback (see renderer.ts, crt.ts). */
 export function createRenderer(): Renderer {
-  return notImplemented('createRenderer', 'Starbuck');
+  return createCanvasRenderer();
 }
 
 /** Compute home positions for the current view. Pure; called each frame or on change. */
-export function computeLayout(_view: GameView, _viewport: Viewport): LayoutSnapshot {
-  return notImplemented('computeLayout', 'Starbuck');
+export function computeLayout(view: GameView, viewport: Viewport): LayoutSnapshot {
+  return computeLayoutImpl(view, viewport);
 }

@@ -1,22 +1,18 @@
 /**
- * Entry point. Until createApp is implemented, draws a placeholder so the build and e2e smoke test have
- * something to load. Replace the placeholder with `createApp({ canvas, seed }).start()`.
+ * Entry point: boot the app on #screen. `?seed=123` fixes the first dungeon's shuffle (e2e, sharing runs).
  */
-import { LOGICAL_HEIGHT, LOGICAL_WIDTH } from './render/types';
+import { createApp } from './ui/app';
 
-function drawPlaceholder(canvas: HTMLCanvasElement): void {
-  canvas.width = LOGICAL_WIDTH;
-  canvas.height = LOGICAL_HEIGHT;
-  canvas.style.width = `${LOGICAL_WIDTH * 2}px`;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.fillStyle = '#0b0b12';
-  ctx.fillRect(0, 0, LOGICAL_WIDTH, LOGICAL_HEIGHT);
-  ctx.fillStyle = '#e8d8a8';
-  ctx.font = '16px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('SCOUNDREL', LOGICAL_WIDTH / 2, LOGICAL_HEIGHT / 2);
+function seedFromUrl(): number | undefined {
+  const raw = new URLSearchParams(window.location.search).get('seed');
+  if (raw === null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n >>> 0 : undefined;
 }
 
 const canvas = document.querySelector<HTMLCanvasElement>('#screen');
-if (canvas) drawPlaceholder(canvas);
+if (canvas) {
+  const seed = seedFromUrl();
+  const app = createApp(seed === undefined ? { canvas } : { canvas, seed });
+  app.start();
+}
