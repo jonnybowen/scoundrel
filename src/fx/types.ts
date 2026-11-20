@@ -8,7 +8,7 @@
  * - When an event "lands" on screen, FxDirector emits an FxCue. Audio plays SFX on cues, so sound
  *   is synced to animation, not to dispatch time.
  */
-import { notImplemented } from '../notImplemented';
+import { createFxDirectorImpl } from './director';
 import type { CardId, GameEvent } from '../game';
 import type { LayoutSnapshot } from '../ui/view';
 
@@ -29,7 +29,12 @@ export interface CardTransform {
 }
 
 export interface FxFrame {
-  /** Cards currently being animated. Cards not present render at their layout home, at rest. */
+  /**
+   * Cards currently being animated. Cards not present render at their layout home, at rest.
+   * May include "ghost" cards that are no longer in GameView/layout (discarded, swept back into the deck)
+   * while their exit tween plays; render draws those from the CardId (suit letter + rank). A card held
+   * back by FX (not yet dealt on screen) is present with opacity 0.
+   */
   readonly cards: ReadonlyMap<CardId, CardTransform>;
   /** Screen shake offset in logical pixels. */
   readonly shake: { readonly x: number; readonly y: number };
@@ -37,7 +42,7 @@ export interface FxFrame {
   readonly screenFlash: { readonly color: string; readonly alpha: number } | null;
   /** HUD numbers mid-tween (HP counts down/up). Render falls back to GameView values when undefined. */
   readonly hud: { readonly hp?: number; readonly score?: number };
-  /** Floating text pops ("-7", "+5", "WASTED"). */
+  /** Floating text pops ("-7", "+5", "WASTED"). x/y is the text's centre anchor in logical pixels. */
   readonly popups: readonly { readonly text: string; readonly x: number; readonly y: number; readonly alpha: number; readonly color: string }[];
   /** Extra CRT intensity bump (0..1) for big moments; render/post-process adds it to base params. */
   readonly crtPulse: number;
@@ -63,10 +68,15 @@ export interface FxDirector {
   onCue(listener: (cue: FxCue) => void): () => void;
   /** Accessibility: shorten/disable motion, shake and flashes. Cues still fire. */
   setReducedMotion(on: boolean): void;
+  /**
+   * Optional (additive, Gaeta 2026-11-20): card under the pointer gets a lift + tilt wobble.
+   * ui/ forwards hover HitTargets of kind 'card' here; null clears. Purely cosmetic, never blocks.
+   */
+  setHover?(cardId: CardId | null): void;
 }
 
 export function createFxDirector(): FxDirector {
-  return notImplemented('createFxDirector', 'Gaeta');
+  return createFxDirectorImpl();
 }
 
 export type Easing = (t: number) => number;

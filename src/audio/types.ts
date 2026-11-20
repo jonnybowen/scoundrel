@@ -6,7 +6,7 @@
  * - SFX are triggered from FxCue (animation-synced), never directly from engine dispatch.
  * - Never throws if audio is unavailable; degrades to silence.
  */
-import { notImplemented } from '../notImplemented';
+import { createAudioEngineImpl, type AudioEngineOptions } from './engine';
 import type { GameEvent } from '../game';
 
 export type SfxId =
@@ -56,6 +56,7 @@ export interface AudioEngine {
   dispose(): void;
 }
 
-export function createAudioEngine(): AudioEngine {
-  return notImplemented('createAudioEngine', 'Gaeta');
+/** `opts` is optional and additive (tests inject a context factory or disable persistence). */
+export function createAudioEngine(opts?: AudioEngineOptions): AudioEngine {
+  return createAudioEngineImpl(opts);
 }
