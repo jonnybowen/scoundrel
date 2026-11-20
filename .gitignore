@@ -1,0 +1,31 @@
+# Squad: ignore runtime state (logs, inbox, sessions)
+# Note: .squad/casting/* is identity and MUST be committed to main, not ignored
+.squad/orchestration-log/
+.squad/log/
+.squad/decisions/inbox/
+.squad/sessions/
+.squad/.scratch/
+.squad/.cache/
+# Squad: SubSquad activation file (local to this machine)
+.squad-workstream
+# squad:claude
+.claude/worktrees/
+
+# Node / build
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Local editor / OS / Claude
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+*.log

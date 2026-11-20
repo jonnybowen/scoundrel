@@ -1,0 +1,10 @@
+{
+  // Purity gate: src/game must compile with NO DOM lib and no Node types.
+  // If anything in the rules engine touches window/document/canvas/audio, this fails.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": []
+  },
+  "include": ["src/game"]
+}

@@ -1,0 +1,34 @@
+/**
+ * GameSession: the single stateful holder around the pure engine, plus the event bus.
+ * CONTRACT. Impl owner: Tyrol. Consumed by ui/ (Starbuck) and fx/, audio/ (Gaeta).
+ * Still DOM-free, so it is headless-testable.
+ *
+ * Flow:  UI intent -> session.dispatch(action) -> engine.step -> state replaced -> listeners(events, state)
+ * Listeners are called synchronously, once per successful dispatch / newGame, in subscription order.
+ * Rejected actions do not notify listeners (the caller gets the violation from dispatch's return value).
+ */
+import { notImplemented } from './notImplemented';
+import type { GameAction } from './actions';
+import type { GameEvent } from './events';
+import type { NewGameOptions, StepResult } from './engine';
+import type { GameState } from './state';
+
+/** Receives each batch of events from one transition, with the resulting state. */
+export type GameListener = (events: readonly GameEvent[], state: GameState) => void;
+
+export type Unsubscribe = () => void;
+
+export interface GameSession {
+  readonly state: GameState;
+  /** Accepted actions since the last newGame. (seed + rules + history) reproduces the game exactly. */
+  readonly history: readonly GameAction[];
+  dispatch(action: GameAction): StepResult;
+  newGame(opts: NewGameOptions): void;
+  subscribe(listener: GameListener): Unsubscribe;
+  /** Rebuild from seed + action log (load / replay / undo-by-replay). Emits one combined batch. */
+  replay(opts: NewGameOptions, actions: readonly GameAction[]): void;
+}
+
+export function createSession(_opts: NewGameOptions): GameSession {
+  return notImplemented('createSession', 'Tyrol');
+}
