@@ -18,7 +18,7 @@ export async function seedSettings(page: Page, s: Record<string, unknown>): Prom
   );
 }
 
-/** Logical (480x270 landscape) point to page CSS coordinates on #screen. */
+/** Logical point to page CSS coordinates on #screen. Assumes the 480x270 frame: use a 16:9 viewport (render/screen.ts). */
 export async function toCss(page: Page, lx: number, ly: number): Promise<[number, number]> {
   const r = await page.evaluate(() => {
     const b = document.querySelector('#screen')!.getBoundingClientRect();

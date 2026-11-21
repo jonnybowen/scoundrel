@@ -13,7 +13,10 @@ import { createCanvasRenderer } from './renderer';
 import type { FxFrame } from '../fx/types';
 import type { GameView, HitTarget, LayoutSnapshot } from '../ui/view';
 
-/** Logical canvas size (landscape). Portrait swaps the axes to 270x480. Values live in theme.ts. */
+/**
+ * Base logical canvas size (16:9 landscape; portrait swaps the axes). The live size is viewport-dependent: the
+ * short side stays 270 and the long side follows the aspect up to 22:9 (render/screen.ts, LayoutSnapshot.logical).
+ */
 export { LOGICAL_WIDTH, LOGICAL_HEIGHT } from './theme';
 
 export interface Viewport {
@@ -22,6 +25,15 @@ export interface Viewport {
   readonly cssHeight: number;
   readonly devicePixelRatio: number;
   readonly orientation: 'portrait' | 'landscape';
+  /** Safe-area insets in CSS px (display cutout, gesture bar). Absent = none. Tappable UI stays clear of them. */
+  readonly safeArea?: SafeInsets;
+}
+
+export interface SafeInsets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
 }
 
 export interface CrtParams {

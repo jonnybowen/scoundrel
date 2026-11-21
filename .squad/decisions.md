@@ -164,7 +164,7 @@ Every implementation-specific assertion traces to Tyrol's accepted decision.
 **By:** Starbuck
 **Recorded:** 2026-11-20T17-15-37
 **References:** Adama, Gaeta, Tigh, Tyrol, src/ui/view.ts, src/render/types.ts
-**Status:** Proposed by Starbuck; ruled on by Adama's review gate (2026-11-20T17-21-25). Accepted: the ButtonId/UiIntent/GameView/selectView additions, LOGICAL_WIDTH/HEIGHT location, the 20% fractional-upscale rule, and the single Settings writer. SUPERSEDED in part: render must no longer flag LETHAL itself (or derive hint counts or HEAL/EQUIP); selectView must precompute GameView.cardsLeftToResolve, RoomCardView.kind and RoomCardView.lethal instead.
+**Status:** Proposed by Starbuck; ruled on by Adama's review gate (2026-11-20T17-21-25). Accepted: the ButtonId/UiIntent/GameView/selectView additions, LOGICAL_WIDTH/HEIGHT location, the 20% fractional-upscale rule, and the single Settings writer. SUPERSEDED in part: render must no longer flag LETHAL itself (or derive hint counts or HEAL/EQUIP); selectView must precompute GameView.cardsLeftToResolve, RoomCardView.kind and RoomCardView.lethal instead. The upscale rule and the fixed 480x270 / 270x480 logical size are AMENDED by the fullscreen-layout decisions of 2026-11-21 (Tyrol's revision 2026-11-21T16-55-51, approved 2026-11-21T17-01-16): 20% applies at dpr < 2, 5% at dpr >= 2, and the long axis is viewport-dependent.
 **Why:** All changes are additive to contracts Starbuck owns. No game/fx/audio contract was changed.
 
 ui/view.ts
@@ -227,12 +227,12 @@ Gates:
 **By:** Adama
 **Recorded:** 2026-11-20T17-21-25
 **References:** Starbuck, Gaeta, Tyrol, src/render/crt.ts, src/render/renderer.ts, src/ui/view.ts, src/ui/app.ts
-**Status:** The REJECT verdict is SUPERSEDED by the APPROVE of 2026-11-20T17-34-35 (Tyrol's revision, commit 4315d44). Rulings (a)-(e) remain binding.
+**Status:** The REJECT verdict is SUPERSEDED by the APPROVE of 2026-11-20T17-34-35 (Tyrol's revision, commit 4315d44). Rulings (a)-(e) remain binding, except that ruling (c) is AMENDED by the fullscreen-layout revision (2026-11-21T16-55-51, approved 2026-11-21T17-01-16): the 20% threshold applies at dpr < 2 and a 5% threshold at dpr >= 2.
 **Why:** Verdict: REJECT. typecheck passes, build passes (78.4 kB JS, 28.4 kB gzip), npm test 194/194, e2e 2/2. The lockout applies to src/render and src/ui: a different agent revises them.
 
 Required changes:
 1. 2D fallback breaks on WebGL init failure (src/render/crt.ts:125-169, src/render/renderer.ts:665-671). createCrtPass claims the display canvas with getContext('webgl') before compiling the shaders. If compile or link fails it returns null, and the renderer's getContext('2d') on that same canvas then returns null, so nothing ever draws: a black screen with no error. I reproduced this by forcing COMPILE_STATUS false (the screenshot is 2.6 kB and entirely black). Without WebGL at all, the fallback works. This breaks the brief and ARCHITECTURE ("2D fallback"). Fix: compile and link on a throwaway probe canvas first, and claim the display canvas for WebGL only once the probe succeeds (or present through a separate canvas element). Add a probe or e2e check that a forced shader failure still renders.
-2. Rule logic in render (src/render/renderer.ts:491-493, 457, 459). hintText hard-codes the resolve-3-per-room rule (3 - resolvedThisRoom, capped by cards in the room). The tooltip decides LETHAL by comparing damage with hp. It also branches HEAL or EQUIP by mapping the suit through artKind. This breaks the brief ("Render applies NO game rules; selectView precomputes affordances") and Starbuck's own decision ("UI uses damageBarehanded instead of re-deriving kind"). Fix: selectView precomputes them as additive fields, GameView.cardsLeftToResolve (from CARDS_RESOLVED_PER_ROOM and engine state, final room included), RoomCardView.kind (via cardKind) and RoomCardView.lethal. Render reads only those. artKind stays for choosing artwork only.
+2. Rule logic in render (src/render/renderer.ts:491-493, 457, 459). hintText hard-codes the resolve-3-per-room rule (3 - resolvedThisRoom, capped by cards in the room). The tooltip decides LETHAL by comparing damage with hp. It also branches HEAL or EQUIP by mapping the suit through artKind. This breaks the brief ("Render applies NO game rules; selectView precomputes affordances") and Starbuck's own decision ("UI uses damageBarehanded instead of re-deriving kind"). Fix: selectView precomputes them as additive fields, GameView.cardsLeftToResolve (from CARDS_RESOLVED_PER_ROOM and engine state, final room included), RoomCardView.kind (via cardKind) and RoomCardView.lethal. Render reads only those.  artKind stays for choosing artwork only.
 
 Contract rulings (binding):
 (a) ACCEPTED as additive: the new ButtonIds (crt, motion, volDown, volUp, closeMenu) and UiIntents (closeSettings, toggleCrt, toggleReducedMotion, changeVolume, skip); GameView.resolvedThisRoom and GameView.chrome (ViewChrome); and selectView(null) or screen 'title' returning the title view. The fields in required change 2 are pre-approved additions.
@@ -435,6 +435,182 @@ Verified:
 Non-blocking nit: the new inline comment "stay in 'coaching' and the player is stuck" reads better as "otherwise we would stay in 'coaching' and the player would be stuck".
 
 The lockout is cleared (`lockout approve tutorial-machine --reviewer adama`). The tutorial will be committed as one batch later.
+
+### 2026-11-20: Review gate: REJECT tutorial-ui (Starbuck). #coach-live reports data-ready="true" while the latched chrome of the step just completed is still mirrored, which breaks the DR2 hook contract
+**By:** Adama
+**Recorded:** 2026-11-20T21-24-50
+**References:** Starbuck, Tigh, Gaeta, docs/TUTORIAL.md, src/ui/app.ts, tutorial-ui
+**Status:** The REJECT verdict is SUPERSEDED by the APPROVE re-review of 2026-11-20T21-58-26 (Gaeta, Tyrol's revision; fix recorded in Tyrol's decision 2026-11-20T21-36-12).
+**Why:** Verdict: REJECT. No commit. Reviewer lockout: the revision goes to an agent other than Starbuck.
+
+Gap (DR2, docs/TUTORIAL.md:244): data-ready must be "true when FX is idle and the chrome is not latched". In src/ui/app.ts the frame loop calls refresh(), which calls tutorial.chrome(fx.isBusy()) at :292, so it gets the latched chrome while FX is busy. It then calls fx.update at :552 and mirrorCoach at :554. mirrorCoach computes ready = !fx.isBusy() at :511 after the update. On the frame where FX finishes, the mirror shows the latched chrome of the step that was just completed, with data-ready="true". Measured with a MutationObserver probe (desktop, normal motion): r1Equip:0:true held for 127 ms after the equip FX, before r1Fight:0:true; r1Fight:0:true for 216 ms; r1Potion:0:true for 158 ms. This is exactly the signature the hook contract tells consumers to wait on ("ready on step X, now send X's key"). The current e2e doesn't trip it, only because every canonical FX-producing move changes the step id.
+
+Clearing conditions:
+1. data-ready is derived from the chrome actually mirrored. It is true only when that frame's chrome() call returned live chrome (not latched) AND FX is idle. For example, capture busy-at-refresh and set ready = !busyAtRefresh && !fx.isBusy(), or expose a latched flag from TutorialController.
+2. A regression check that fails on the current code. For example, an e2e MutationObserver sequence assertion: after an action step's key, no (step=<that step>, ready=true) record appears once ready has gone false. Or an equivalent unit test of the mirror/controller.
+3. typecheck, vitest and the full Playwright run stay green.
+
+Everything else in the subject passes: the offer modal (TEACH ME / I KNOW THE RULES), tutorialSeen persisted only through updateSettings (single writer), the title TUTORIAL button and key T, X / SKIP / LEAVE TUTORIAL with no confirmation, N ignored, the recap Enter/R/Esc, render gating on chrome.tutorial (renderer.ts and coach.ts activeCoach), no rules in render, and the 2D-only display. The reduced-motion probe gave byte-identical screenshots 700 ms apart on the offer, the coach info and action steps, the nudge and the menu, on desktop and Pixel 7. A tap on the coach panel counts as NEXT. There were no page errors. My earlier advisory is closed: render/coach.ts:29 STATIC_FX.spotlightPulse = 0.5, used under reducedMotion (:31-33).
+
+Advisories (not required): the landscape coach strip is 8,234,464,33 instead of the doc's ~52 tall (2 text lines). Only r4Wasted plus a nudge replaces line 2, which the CoachView contract allows; update the doc. renderer.ts:23 declares COACH_DRAWN between imports. Restarting from desynced via next() does not fx.skip() or clear pendingFight/toast. tutorialPlayReal reuses opts.seed when one was given. The TutorialController latch and signals have no direct unit tests.
+
+### 2026-11-20: Review gate: APPROVE tutorial-tests (Tigh). Unit tests commit-ready now; e2e files commit together with the revised tutorial-ui
+**By:** Adama
+**Recorded:** 2026-11-20T21-24-58
+**References:** Tigh, Starbuck, docs/TUTORIAL.md, tutorial-tests
+**Why:** Verdict: APPROVE.
+
+Coverage against the DR2 test list (docs/TUTORIAL.md "Tests") is complete:
+- Script integrity, with the doc parsed and diffed word for word, glyphs checked against the real font, the 138-char and 3x46 wrap limits, and a purity import check.
+- The golden playthrough, with HP 20,20,10,14,10,20 and score 30, and also under 'lt'.
+- The gate: every query at every step and page, rule 6 cross-checked against step(), specific nudges, the enterRoom rule, and blocked moves leaving history unchanged.
+- NEXT semantics, desync, and determinism and purity on deep-frozen states.
+- deckOption: RNG spy, order, deckSize, RangeError, replay, plus a golden for the default path.
+- view.test: the selectView kind, cardsLeftToResolve and lethal rulings.
+- E2E: a full keyboard playthrough on desktop and Pixel 7, plus reduced motion. Also the nudge, N ignored, X leaves, reload with no offer, Esc decline persisted, old-save offer, and the smoke update.
+
+The 2 skips are fallback.spec.ts:183 and :217 (CRT curvature hit-testing) on mobile-chromium. They are justified: the logical probe points belong to the desktop mouse-hover path, and running them again on a touch-emulated device adds no coverage. Advisory: the reason "landscape layout only" is imprecise, because the describe forces 960x540, so say "desktop mouse hover only".
+
+Commit readiness: tests/unit/{tutorial,deckOption,view}.test.ts import only approved code and are commit-ready now. tests/e2e/{tutorial,fallback,util}.ts and smoke.spec.ts exercise the tutorial UI, so commit them with the revised tutorial-ui. They didn't catch the data-ready latch bug, but the DR2 list didn't ask for that check. Its regression check is a clearing condition on tutorial-ui.
+
+Advisories: there are no direct TutorialController tests (latch, stepSucceeded/coachShown/completed signals), and no pointer/tap path in e2e.
+
+### 2026-11-20: #coach-live data-ready is derived from the latch state of the text mirrored that frame (app-side flag, not a controller API)
+**By:** Tyrol
+**Recorded:** 2026-11-20T21-36-12
+**References:** adama, starbuck, tigh, docs/TUTORIAL.md
+**Status:** Lockout fix for the tutorial-ui REJECT of 2026-11-20T21-24-50; APPROVED by Gaeta's re-review (2026-11-20T21-58-26).
+**Why:** Lockout fix for Adama's tutorial-ui reject (docs/TUTORIAL.md:244). refresh() in src/ui/app.ts now records chromeLatched = fx.isBusy() at the moment it calls tutorial.chrome(chromeLatched). mirrorCoach computes ready = t !== null && !chromeLatched && !fx.isBusy(). So data-ready="true" only appears when the mirrored text came from a live (unlatched) chrome() call and FX is still idle after fx.update. Before this, on the frame FX went idle, the latched text of the finished step was mirrored with ready=true for 127-216 ms. I chose the app-side flag over a TutorialController 'latched' getter: it is the smallest change, it adds no API surface, and it describes exactly the text that was mirrored. Regression: e2e test 'data-ready never flags a finished action step as ready again' in tests/e2e/tutorial.spec.ts, which records (step, ready) with a MutationObserver over r1Equip/r1Fight/r1Potion. It fails on the old code and passes with the fix.
+
+### 2026-11-20: Resume-on-reload save contract: src/ui/save.ts, key 'scoundrel.run.v1', the save always mirrors the current real run or nothing
+**By:** Starbuck
+**Recorded:** 2026-11-20T21-37-37
+**References:** tyrol, adama, gaeta, decisions.md: User directive: confirmed tutorial choices and resume-on-reload
+**Status:** Contract and src/ui/save.ts ACCEPTED. Tigh's first review (2026-11-20T21-56-15) required test additions only; the revised tests were APPROVED (2026-11-21T09-55-22), and the app.ts resume wiring was APPROVED (2026-11-21T09-55-28).
+**Why:** Contract (owner: Starbuck, src/ui/save.ts):
+- Key 'scoundrel.run.v1'. It is separate from Settings, and settings.ts stays the only Settings writer. The record is {version:1, seed, rules (the fully resolved RulesOptions from GameState), actions (session.history)}. Storage is injected (SaveStorage = getItem/setItem/removeItem). browserStorage() returns localStorage or null. Every access is wrapped in try/catch, so a throwing storage never throws out.
+- Every write is verified first: it steps the pure engine from (seed, rules, actions) and compares the result with the live state. A record that would not replay exactly is never written; the save is cleared instead. This is how scripted-deck (tutorial) runs are excluded, even though tutorialController.start deals the scripted game BEFORE tutorial.active becomes true, so an isScripted flag alone would save the tutorial deal. attachAutosave verifies incrementally (one step plus a JSON compare per batch).
+- The save mirrors the current real run or nothing. Starting the tutorial, or any non-reproducible run on the session, clears it, and so does a finished run (phase won or lost).
+- loadRun returns null for an absent, unreadable, corrupt-JSON, wrong-version or wrong-shape record. Unknown keys are stripped.
+- restoreRun(session, storage) dry-runs the log on the pure engine, refuses a finished end state, then calls session.replay in try/catch. Any failure clears the save, leaves the session unchanged and silent, and returns {ok:false, reason:'none'|'illegal'|'finished'|'replayThrew'}. On ok the caller MUST call fx.skip() (DR1 note), because replay broadcasts one combined batch.
+- Bump RUN_SAVE_VERSION (new key suffix) on any breaking change to the record or to the engine's determinism (shuffle, rules defaults). An old save then loads as null and the player sees the title.
+
+### 2026-11-20: Review gate: REJECT run-save (Starbuck, src/ui/save.ts + tests/unit/save.test.ts). The code is correct, but the tests miss part of the contract (4 realistic mutants survive, including the DR1 throwing-localStorage boot path)
+**By:** Tigh
+**Recorded:** 2026-11-20T21-56-15
+**References:** starbuck, adama, decisions.md: User directive: confirmed tutorial choices and resume-on-reload, DR1
+**Status:** The REJECT verdict is SUPERSEDED by the APPROVE re-review of 2026-11-21T09-55-22 (Tyrol's test revision). The advisories below remain open.
+**Why:** Verdict: REJECT (tests only. No change to src/ui/save.ts is required).
+
+Code: correct against the directive. The save holds seed, resolved rules and the log. Every write is checked by replay. A finished run clears the save. A scripted (tutorial) deck is never written. Restore does a dry run, then session.replay inside try/catch, and falls back with the save cleared. Every storage access is wrapped. tsc is clean, and 27/27 tests pass.
+
+Mutation run: 15 meaningful mutants, 11 killed. The 4 survivors, each of which a 3-to-6-line probe test kills (verified):
+- M13: the try/catch is removed from browserStorage() (save.ts:41-46). The test "browserStorage() never throws, whatever the host provides" is vacuous: Node has no throwing localStorage getter. This is the DR1 "throwing localStorage must still boot" path, so it is a gap against a team decision.
+- M4/M5: the seed or rules equality is dropped from the incremental prefix check (save.ts:224-225). After that, a new deal that follows another deal (newGame A then newGame B, or the same seed with different rules) is cleared instead of saved, so a reload right after a deal goes to the title. No test deals twice in a row.
+- M3: the sameState compare is skipped on the prefix path (save.ts:238). A scripted deck with the same seed as the previous deal is then saved (a tutorial leak). No test has a matching prefix with a diverging state.
+- M12: the isScripted() result is ignored in attachAutosave (save.ts:249). No test sets the flag on a reproducible run.
+
+Clearing conditions (add to tests/unit/save.test.ts. Tests are my domain, so Tigh or any agent other than Starbuck may write them; src needs no change):
+1. browserStorage() returns null when globalThis.localStorage is a throwing getter (define it with Object.defineProperty and restore it in finally). Kills M13.
+2. Autosave saves after back-to-back deals: newGame(seed 1), newGame(seed 2) gives a save with seed 2; then newGame(seed 2, rules lt) gives a save with weaponLimit 'lt'. Kills M4/M5.
+3. Autosave: newGame({seed: TUTORIAL_SEED}) and then newGame(tutorialGameOptions()) leaves no save. Kills M3.
+4. Autosave with isScripted() returning true on a seeded (reproducible) game clears the save. Kills M12.
+Re-run the mutation set. All 4 must be killed.
+
+Cost: fine. With autosave, each action costs one engine step, an O(n) identity prefix compare, a log slice and one JSON compare of the state, which measured at 0.21 ms max per action. Calling saveRun without `verified` is O(n) per save, so O(n^2) per run: 5.4 ms for a whole 27-action run and 0.5 ms max per save. At about 100 actions that is still a few ms per save. Not a concern. The record is at most about 1 KB.
+
+Advisories (not required):
+- A change to the shuffle or the engine without a RUN_SAVE_VERSION bump is caught only when the old log becomes illegal. A log of [] or [enterRoom] would silently restore a different deal. Consider storing a fingerprint of the first room or the deck in the record.
+- parseSavedRun rebuilds rules with only the two known keys. A new RulesOptions field breaks the typecheck at save.ts:117, so it cannot be dropped silently. Good.
+- A rules-default change is safe because the resolved rules are stored. A save from an older version is cleared, and the player sees the title.
+
+### 2026-11-20: Review gate: tutorial-ui re-review (Tyrol revision): APPROVE
+**By:** Gaeta
+**Recorded:** 2026-11-20T21-58-26
+**References:** tyrol, adama, starbuck, src/ui/app.ts, tests/e2e/tutorial.spec.ts, docs/TUTORIAL.md
+**Status:** Supersedes the REJECT of 2026-11-20T21-24-50 on the same subject (tutorial-ui).
+**Why:** Quick re-review of Tyrol's revision of tutorial-ui (originally Starbuck's, rejected by Adama).
+
+Condition 1 is met. In frame() (src/ui/app.ts:544-566) the order is refresh(), fx.update, draw, then mirrorCoach(view), all in one try block. refresh() sets chromeLatched = fx.isBusy() (:293) before it calls tutorial.chrome(chromeLatched) (:296), so the flag and the mirrored text always come from the same refresh(). mirrorCoach is called only from frame() and always after that frame's refresh(), so chromeLatched cannot be left over from an earlier frame. The other refresh() callers (handle/resize when lastView is null, :312/:451/:471/:482) only bring the flag up to date with the view they build, and the next frame overwrites it anyway. If refresh() throws, the catch skips mirrorCoach. When the tutorial ends or the screen leaves 'game', t is null, so ready is false and data-ready is not written. The FX-idle term is still checked after fx.update. This matches docs/TUTORIAL.md:244.
+
+Condition 2 is met. The new e2e test 'data-ready never flags a finished action step as ready again' logs every data-step|data-ready transition with a MutationObserver. For r1Equip, r1Fight and r1Potion it asserts that after ready goes false, the step never shows step|true again. That is the exact old-code failure. Tyrol showed it failing on the old code, and I did not repeat the mutation test.
+
+Condition 3 is met. npm run typecheck is clean, and playwright tests/e2e/tutorial.spec.ts --project=desktop-chromium gives 7/7 passed (I re-ran both). I did not re-run vitest because Tyrol reported 349/349 and this change touches only app.ts and the e2e spec.
+
+No changes are required.
+
+### 2026-11-21: Review gate: run-save (re-review): APPROVE
+**By:** Tigh
+**Recorded:** 2026-11-21T09-55-22
+**References:** tyrol, starbuck, src/ui/save.ts, tests/unit/save.test.ts
+**Status:** Supersedes the REJECT of 2026-11-20T21-56-15 on the same subject (run-save).
+**Why:** Tyrol revised tests/unit/save.test.ts only; src/ui/save.ts unchanged. All four clearing conditions are now covered: (1) a throwing globalThis.localStorage getter installed via defineProperty and restored in finally; (2) back-to-back deals on one session (new seed, then the same seed with rules 'lt'); (3) a TUTORIAL_SEED deal followed by tutorialGameOptions() leaves no save; (4) isScripted() true on a reproducible run clears, and the flag wins. Spot-check on a scratch copy: deleting the rules guard in verify kills 1 test, and dropping sameState from verify kills 2. Both mutants are killed, which matches Tyrol's report. Coordinator: vitest 353/353, typecheck clean.
+
+### 2026-11-21: Review gate: resume-wiring (Starbuck, src/ui/app.ts): APPROVE
+**By:** Tigh
+**Recorded:** 2026-11-21T09-55-28
+**References:** starbuck, src/ui/app.ts, src/ui/save.ts
+**Why:** Checked against the directive. Active run survives a reload: attachAutosave is attached in ensureSession, so every batch saves. FX is skipped: fx.skip() runs after restoreRun succeeds, because the subscriber enqueues before skip. Failure falls back to the title: restoreRun clears the save and leaves the session alone, ui stays on 'title', and the outer catch forces 'title'. Finished runs clear and the tutorial isn't saved: the save.ts guards handle this, isScripted is wired to tutorial.active, and the reproducibility check catches the deal-before-active case. Throwing localStorage still boots: browserStorage() returns null and tryResume is wrapped. Specific checks: (a) ensureSession(0) at boot with no save leaves a session, but createSession doesn't broadcast, so nothing is saved. The title view only reads session state when screen==='game', and newGame/startTutorialRun reuse the session with their own seed/deck. No change to the title or to Enter/N. (b) Resume sets screen 'game' and clears menuOpen, pendingFight, showResult, error, hover and tutorial. toast is null at boot. refresh() sets tutorialOffer to false off the title. music('dungeon') stays, because unlock() only switches to title music on the title. (c) When a save exists, the offer is hidden while in the game and comes back on the title if tutorialSeen is still false. That's existing behaviour, and the directive doesn't touch it. Seeded boots (?seed=, e2e) skip resume. mirrorRun attributes are diff-gated and cheap. Non-blocking nit: resume doesn't clear ui.toast explicitly, which is harmless at boot.
+
+### 2026-11-21: Fullscreen layout contract: logical size is viewport-dependent (short side 270, long side 480..660); LayoutSnapshot gains optional logical + safe; Viewport gains optional safeArea; upscale rule is now integer unless it wastes >5%
+**By:** Starbuck
+**Recorded:** 2026-11-21T16-33-44
+**References:** Adama, Gaeta, Tigh
+**Status:** Proposed by Starbuck. Adama's review gate REJECTED this version (2026-11-21T16-47-12); Tyrol's revision (2026-11-21T16-55-51) was APPROVED (2026-11-21T17-01-16). Items 2 and 5 stand as written. AMENDED by Tyrol's revision: item 4 (the 5% upscale threshold now applies only at dpr >= 2; dpr < 2 keeps the 20% rule of 2026-11-20 (c)); item 1 (the long axis is additionally capped at the viewport aspect, min(MAX_LONG, round(270 * longDev / shortDev), floor(longDev / scale)), so 16:9 windows stay 480x270 at every dpr); item 3 (the safe box is max(inset, CHROME_EDGE) on the long axis whatever the insets report: 24 top / 8 bottom in portrait, 24 both sides in landscape); and onResize now refreshes the layout.
+**Why:** Contract changes (mobile full-screen, Galaxy S22+):
+1. Logical resolution is no longer fixed at 480x270. render/screen.ts screenGeometry(viewport) keeps the short side at 270 and sets the long side to floor(deviceLong / scale), clamped to 480 (16:9) through 660 (22:9). Past 22:9 the long axis letterboxes. Squarer than 16:9 letterboxes the short axis. 16:9 viewports are unchanged (480x270, and every frame rect is identical to before). Both Renderer.resize and computeLayout derive geometry from the same Viewport. [Amended: long axis also capped at the viewport aspect; see Tyrol's revision 2026-11-21T16-55-51 item 2.]
+2. LayoutSnapshot gains optional `logical: {w,h}` and `safe: Rect` (the safe content box in logical px). Absent means the 16:9 base size and the whole canvas, so hand-built snapshots in the fx tests still work. Render, coach overlays and hitTest read the size from the layout (layout.ts logicalOf/frameOf), not from theme.logicalSize(orientation). That function is now only the base size.
+3. Viewport gains optional `safeArea` (CSS px insets). app.ts reads the larger of env(safe-area-inset-*) and Capacitor's injected --safe-area-inset-* variables through a hidden #safe-probe element. A MutationObserver on <html style> re-reads them because Capacitor injects them after load without firing a resize event. Only long-axis insets are applied: top/bottom in portrait, symmetric left/right in landscape so the centre line stays at w/2. The safe box never shrinks below the 480 design length. [Amended: a minimum CHROME_EDGE margin applies regardless of the insets; see Tyrol's revision item 3.]
+4. Upscale rule: integer scale unless it would waste more than 5% of the fit (previously 20%). Reason: the long axis now adapts to the scale, so only the short axis can waste space. 5% keeps exact 4x on the S22+ and Pixel 7 (1080 = 4 x 270). A dpr-3 phone (4.37x) now fills the screen instead of showing 8% bars, and nearest-neighbour at dpr 2 or higher hides the uneven pixels. The display canvas is still 2D-only, the CRT warp is in uv space so it does not depend on aspect, and hitTest is unchanged apart from reading the logical size from the layout. [Amended: 5% applies only at dpr >= 2; dpr < 2 keeps 20%. See Tyrol's revision item 1.]
+5. Frames are functions of (orientation, logical size, safe box), memoised in layout.frameFor. They gained result, topY, scoreX, hint, toastY, footerY, logoY and showcaseY so the renderer no longer hardcodes those positions.
+
+### 2026-11-21: Review gate: REJECT fullscreen-layout (Starbuck). The aspect-adaptive canvas is accepted in principle, but the 5% upscale rule regresses dpr-1 desktops, hitTest is stale for a frame after resize, and on the S22+ the HUD relies on safe-area insets nobody has verified
+**By:** Adama
+**Recorded:** 2026-11-21T16-47-12
+**References:** Starbuck, Tigh, fullscreen-layout, decisions 2026-11-20 (c) 20% fractional-upscale rule
+**Status:** SUPERSEDED by the APPROVE of 2026-11-21T17-01-16 (Tyrol's revision 2026-11-21T16-55-51). All three required changes were met.
+**Why:** Verified: typecheck and build pass. npm test 385/385. e2e 48 passed, 4 skipped. With E=0 the frames match the old LANDSCAPE/PORTRAIT constants field by field. On the S22+ the screen is 270x585 / 585x270 at an exact 4x, filling 99.8%. My browser probes passed at S22+ portrait and landscape, 4:3 in both orientations (letterboxed on the short axis), 32:9 (capped at 660, centred), 1600x900@1 and 892x340@2.625, each with the CRT on and off (PLAY, then a room-card tap). A discriminating CRT-warp hitTest probe passed at 19.5:9 in both orientations: a point inside the settings button only when warped hit with the CRT on and missed with it off. Rotating portrait, then landscape, then portrait keeps taps correct. With getContext('webgl') returning null, the screen stays lit (0.98) and taps still work. Injecting --safe-area-inset-top after load re-lays out through the MutationObserver. No game rules were added to render, and the display canvas is still 2D-only.
+
+Required changes:
+1. Upscale rule (amends decision 2026-11-20 (c)). The 5% justification holds only at dpr >= 2, which is what the code's own comment says, but the code applies it at every dpr. Measured old vs new: 1600x900@1 goes from integer 3x to fractional 3.333x, 2560x1440@1 from 5x to 5.333x, and 1100x620@1 from 2x to 2.29x. These are uneven nearest-neighbour pixels on common 16:9 desktops, so the claim "16:9 is pixel-identical" is false at the device-pixel level. The S22+ and Pixel 7 are exact 4x under both rules, so the request does not need the change. Fix: keep the 20% threshold when dpr < 2 and allow 5% only when dpr >= 2, or restore 20% everywhere. Add unit tests pinning 1600x900@1 and 2560x1440@1 to an integer scale, and S22+ / Pixel 7 to 4x.
+2. Stale hitTest after resize. onResize updates the renderer's cssW/cssH but leaves lastLayout on the old logical size until the next rAF, so a tap in that window hit-tests with mismatched scale. This breaks "hitTest accounts for scale". Fix: call refresh() (or rebuild lastLayout) in onResize after renderer.resize.
+3. Target-device safety for the HUD. ROOM/SCORE and the mute/settings buttons now sit at the physical top edge and corners of the S22+, where the punch-hole camera and rounded corners are. Before this change they were inside letterbox bands. The safe-area inset path has not been checked on a device, and CSS insets never cover rounded corners. Fix: keep a minimum logical margin on the long axis for top-bar chrome and corner buttons whatever the insets say (the spare height E gives about 105 px of room), or attach screenshots from a real S22+ (or an emulator with the S22+ cutout and corner profile) in both orientations showing the HUD clear and the corner buttons fully visible and tappable.
+
+Clearing conditions: changes 1 to 3 are done, with tests for 1 and 2 (for 2, a resize followed by an immediate hitTest returns the rect from the new layout). Typecheck, npm test and e2e are green. Re-review by Adama or Tigh, not Starbuck.
+
+Advisories (not required): tests/e2e/util.ts toCss could read the logical size instead of assuming 480x270. The empty bottom band in portrait outside the tutorial could be put to use, for example by spreading the bands further. Remove the `void lh;` in drawTitle. The fullscreen e2e taps rect centres, so it would not detect a warp mismatch; consider adding an edge point.
+
+### 2026-11-21: Fullscreen-layout revision: upscale threshold is 20% at dpr < 2 and 5% at dpr >= 2; long axis capped at the viewport aspect; HUD keeps a minimum edge margin (CHROME_EDGE 24, CHROME_EDGE_BOTTOM 8) regardless of safe-area insets; onResize refreshes the layout
+**By:** Tyrol
+**Recorded:** 2026-11-21T16-55-51
+**References:** Adama, Starbuck, Tigh, fullscreen-layout, decision 2026-11-20 (c)
+**Status:** APPROVED by Adama's review gate (2026-11-21T17-01-16). Amends ruling (c) of 2026-11-20T17-21-25 and items 1, 3 and 4 of Starbuck's fullscreen contract (2026-11-21T16-33-44).
+**Why:** Amends decision 2026-11-20 (c) and the fullscreen-layout screen contract (src/render/screen.ts).
+
+1. Integer-upscale threshold: INTEGER_WASTE = 0.2 (the recorded rule) applies when dpr < 2. INTEGER_WASTE_HIDPI = 0.05 applies only when dpr >= 2, where uneven nearest-neighbour pixels do not show. Pinned by unit tests: 1600x900@1 gives 3x, 2560x1440@1 gives 5x, 1100x620@1 gives 2x (all 480x270). The S22+ (412x892@2.625, both orientations) and the Pixel 7 (412x915@2.625) give exactly 4x.
+2. The logical long axis is now min(MAX_LONG, round(270 * longDev / shortDev), floor(longDev / scale)), clamped to at least 480. When the integer snap letterboxes the short axis, a 16:9 window stays 480x270 with even bars and does not grow to 533x270. 16:9 frames are therefore identical to the pre-fullscreen constants at every dpr.
+3. HUD edge margin: the safe box is max(inset, minimum) on each long-axis side, even when the insets report 0. The minimum is measured from the physical edge, so a long-axis letterbox counts towards it. Portrait uses top 24 and bottom 8. Landscape uses 24 on both sides, because the camera can be on either short edge. The margin comes out of the spare length beyond 16:9, so 16:9 (no spare) has margin 0 and its rects are unchanged. Justification for the S22+ (about 393 ppi, about 15.5 device px per mm, 4 device px per logical px): the punch-hole ends about 4.5 mm (about 18 logical px) below the edge, so the ROOM text at 24+5 sits about 11 logical px under it. The corner radius is about 6 mm (about 24 logical px), and the settings button's outer corner (4 px in, 27 px down) lies outside that arc. Bottom 8 keeps the 6 px-inset coach strip corners on the glass (the 24 px arc is 6 px in at 8.1 px up). The cost is 32 of the 105 spare logical px in S22+ portrait and 48 of the 105 in landscape. The numbers are estimates from published dimensions and have not been measured on a device.
+4. app.ts onResize calls refresh() right after renderer.resize, so lastLayout always matches the renderer's CSS size. An e2e test taps from inside the resize event, before any rAF, and fails without the fix.
+
+### 2026-11-21: Review gate: APPROVE fullscreen-layout (Tyrol revision). The upscale rule depends on dpr, hitTest refreshes on resize, and the HUD keeps minimum edge margins on the S22+. All three clearing conditions are met.
+**By:** Adama
+**Recorded:** 2026-11-21T17-01-16
+**References:** Tyrol, Starbuck, Tigh, fullscreen-layout, decision 2026-11-20 (c), adama-review-gate-fullscreen-layout-starbuck-reject
+**Status:** Supersedes the REJECT of 2026-11-21T16-47-12 on the same subject (fullscreen-layout).
+**Why:** Re-review of the fullscreen-layout revision by Tyrol, against my REJECT of Starbuck's version.
+
+Verified myself:
+- typecheck and build clean. npm test 390/390. npm run test:e2e 49 passed, 5 skipped, exit 0.
+- R1 (upscale rule). screen.ts uses INTEGER_WASTE 0.2 at dpr < 2 and 0.05 at dpr >= 2. An independent JS port of screenGeometry gives: 1600x900@1 -> 480x270 at 3x; 2560x1440@1 -> 5x; 1100x620@1 -> 2x; 1366x768@1 -> 2.844x (fractional, as under the recorded rule); 1920x1080@1 -> 4x. S22+ 412x892@2.625 -> 270x585 at 4x and 585x270 at 4x (fill 99.8%, about 1.5 device px of bars). Pixel 7 412x915 -> 270x600 at 4x. The S22+ with Chrome's URL bar (412x780, 412x846, 846x412, 780x412) stays at 4x and fills more than 99.6%. Unit tests pin 1600x900, 2560x1440 and 1100x620 to integer scales, and the S22+ and Pixel 7 to 4x.
+- Aspect cap. It never adds bars on the S22+: aspectLong equals floor(longDev/4) to within one logical px in every S22+ case I probed. The 892x340@2.625 bars (about 160 device px on the long axis, fill 93%) come from the existing MAX_LONG 660 cap (the viewport is 2.6:1, past 22:9), not from the new aspect cap (aspectLong 708). This matches my earlier probe of Starbuck's version. The cap's only effect is to keep dpr-1 16:9 windows at 480x270 with even bars, which is the behaviour I asked for.
+- R2 (stale hitTest). onResize calls refresh() after renderer.resize. Discrimination check: I removed that one line, ran 'resize then tap before the next frame', and it failed (data-screen never became game). I then restored app.ts byte for byte (md5 matched) and it passes in the full run. The test asserts the tap point misses PLAY and TUTORIAL under the old logical size, and that 0 rAF frames ran between the resize and the tap.
+- R3 (HUD margins). The safe box is max(inset, CHROME_EDGE 24) on the top in portrait and on both sides in landscape, and max(inset, 8) on the bottom in portrait, with letterbox counted towards the minimum. 16:9 gives a safe box equal to the full canvas, so the frames are unchanged. Unit tests check that mute, settings, ROOM and SCORE are at least 24 from the physical edges on the S22+ in both orientations. The S22+ screenshots (portrait fight, landscape game) show the HUD well clear of the top edge and corners. The numbers are estimated from published specs, not measured on a device. That is acceptable because R3 asked for a minimum margin 'whatever the insets say', and that is what this provides.
+- The relaxed '>40' threshold is legitimate. In landscape at 585 wide, the 2 x 24 side margins leave E = 57 (not 105). That gives gg = 4 and m = 7, so the deck-to-discard span grows by 43 (from 376 to 419). The test cannot be '>60' with these margins. The margins are what moved, not the spreading logic, and the columns still move outwards. The margin above the threshold is small (3), so any future change to the margins will need the test updated deliberately.
+- Recorded decisions: no game rules were added to render (layout and screen are pure geometry), the display canvas is still 2D only, the WebGL-null fallback is unchanged by this revision, and hitTest goes through the same frame and logical size, so the CRT-warp taps in fullscreen.spec pass in both orientations.
+
+Advisories (not required): the remaining `void lh;` is in drawGame (it predates this work), and my earlier note mislocated it, so it can be cleaned up separately. The empty bottom band in portrait outside the tutorial can still be put to use. A screenshot from a real S22+ should be taken when hardware is available, to confirm the CHROME_EDGE estimates.
+
+Decision 2026-11-20 (c) is amended as Tyrol recorded: 20% at dpr < 2, 5% at dpr >= 2.
 
 ## Governance
 

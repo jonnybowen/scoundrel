@@ -1,7 +1,8 @@
 /**
  * Canvas renderer. Owner: Starbuck.
  *
- * Draws the whole scene at the fixed logical resolution into an offscreen 2D canvas (crisp pixels), then
+ * Draws the whole scene at the logical resolution (short side 270, long side by aspect; render/screen.ts) into an
+ * offscreen 2D canvas (crisp pixels), then
  * presents it to the display canvas, which is ALWAYS a 2D context: either a copy of the WebGL CRT pass's
  * private canvas (crt.ts) or, when CRT is off / WebGL is unavailable, failed to initialise or is lost, a
  * nearest-neighbour 2D blit of the scene.
@@ -15,7 +16,8 @@ import type { CrtParams, Renderer, Viewport } from './types';
 import { cardBack, cardFace, cardShape, drawIcon, parseCardId, rankLabel, type IconId } from './cardArt';
 import { createCrtPass, warpUv, type CrtPass } from './crt';
 import { drawText, drawTextOutline, drawTextShadow, measureText } from './font';
-import { frameFor, menuRows } from './layout';
+import { frameOf, logicalOf, menuRows } from './layout';
+import { screenGeometry } from './screen';
 import { BTN, button, panel, type ButtonStyle } from './widgets';
 import { drawCoach, drawOffer, drawRecap, drawSpotlight } from './coach';
 
@@ -23,7 +25,7 @@ import { drawCoach, drawOffer, drawRecap, drawSpotlight } from './coach';
 const COACH_DRAWN: ReadonlySet<ButtonId> = new Set<ButtonId>([
   'tutorialAccept', 'tutorialDecline', 'tutorialNext', 'tutorialPlayReal', 'tutorialReplay',
 ]);
-import { CARD_H, CARD_W, DEFAULT_CRT, PAL, SWIRL_A, SWIRL_B, SWIRL_C, logicalSize } from './theme';
+import { CARD_H, CARD_W, DEFAULT_CRT, PAL, SWIRL_A, SWIRL_B, SWIRL_C } from './theme';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -162,17 +164,10 @@ export function createCanvasRenderer(): Renderer {
 
   const applySize = (): void => {
     if (!display || !viewport) return;
-    const { w, h } = logicalSize(viewport.orientation);
+    // Logical size follows the aspect (long side 480..660); the scale is integer unless that wastes >5% of the
+    // short axis (render/screen.ts has the reasoning). computeLayout derives the same geometry from the viewport.
+    const { w, h, devW, devH } = screenGeometry(viewport);
     const dpr = Math.max(1, viewport.devicePixelRatio || 1);
-    const availW = Math.max(1, viewport.cssWidth * dpr);
-    const availH = Math.max(1, viewport.cssHeight * dpr);
-    const fit = Math.min(availW / w, availH / h);
-    // Integer scale in device pixels; fall back to fractional only when integer would waste >20% of the fit
-    // (e.g. phones at dpr 2.6). On high-DPI screens the uneven pixel widths are invisible, more so under CRT.
-    let scale = Math.floor(fit);
-    if (scale < 1 || scale < fit * 0.8) scale = fit;
-    const devW = Math.max(1, Math.round(w * scale));
-    const devH = Math.max(1, Math.round(h * scale));
     crt?.resize(devW, devH);
     if (display.width !== devW) display.width = devW;
     if (display.height !== devH) display.height = devH;
@@ -470,7 +465,7 @@ export function createCanvasRenderer(): Renderer {
   };
 
   const drawGame = (ctx: Ctx, view: GameView, layout: LayoutSnapshot, fx: FxFrame, t: number, still: boolean, lw: number, lh: number): void => {
-    const f = frameFor(layout.orientation);
+    const f = frameOf(layout);
     const portrait = layout.orientation === 'portrait';
 
     // Table: felt strip behind the room, weapon tray.
@@ -523,8 +518,7 @@ export function createCanvasRenderer(): Renderer {
     // The coach panel replaces the hint line while the tutorial runs.
     const hint = view.chrome.tutorial ? '' : hintText(view);
     if (hint && !view.chrome.showResult) {
-      const hy = portrait ? 210 : 232;
-      const hx = portrait ? lw / 2 : 240;
+      const { x: hx, y: hy } = f.hint;
       if (!(portrait && (view.pendingFight || view.chrome.hover?.kind === 'card'))) {
         drawTextShadow(ctx, hint, hx, hy, PAL.white, 1, 'center');
       }
@@ -533,12 +527,11 @@ export function createCanvasRenderer(): Renderer {
     // Top bar: score.
     const score = fx.hud.score ?? view.score;
     if (score !== null) {
-      const sx = portrait ? 8 : 8;
-      drawTextShadow(ctx, 'SCORE', sx, 5, PAL.grey);
-      drawTextShadow(ctx, String(Math.round(score)), sx + 24, 5, score < 0 ? PAL.red : PAL.gold);
+      drawTextShadow(ctx, 'SCORE', f.scoreX, f.topY + 5, PAL.grey);
+      drawTextShadow(ctx, String(Math.round(score)), f.scoreX + 24, f.topY + 5, score < 0 ? PAL.red : PAL.gold);
     }
-    if (portrait) drawTextShadow(ctx, `ROOM ${view.roomNumber}`, lw / 2, 5, PAL.gold, 1, 'center');
-    else drawTextShadow(ctx, 'SCOUNDREL', lw / 2, 5, PAL.paperShade, 1, 'center');
+    if (portrait) drawTextShadow(ctx, `ROOM ${view.roomNumber}`, lw / 2, f.topY + 5, PAL.gold, 1, 'center');
+    else drawTextShadow(ctx, 'SCOUNDREL', lw / 2, f.topY + 5, PAL.paperShade, 1, 'center');
 
     // FX popups.
     for (const p of fx.popups) {
@@ -549,11 +542,12 @@ export function createCanvasRenderer(): Renderer {
     void lh;
   };
 
-  const drawTitle = (ctx: Ctx, view: GameView, layout: LayoutSnapshot, t: number, still: boolean, lw: number, lh: number): void => {
+  const drawTitle = (ctx: Ctx, view: GameView, layout: LayoutSnapshot, t: number, still: boolean, lw: number): void => {
     const portrait = layout.orientation === 'portrait';
+    const f = frameOf(layout);
     const title = 'SCOUNDREL';
     const scale = 5;
-    const logoY = portrait ? 64 : 26;
+    const logoY = f.logoY;
     const w = measureText(title, scale);
     let x = Math.round(lw / 2 - w / 2);
     for (let i = 0; i < title.length; i++) {
@@ -572,7 +566,7 @@ export function createCanvasRenderer(): Renderer {
       { id: 'D7', suit: 'diamonds', rank: 7 },
       { id: 'H9', suit: 'hearts', rank: 9 },
     ];
-    const cy = portrait ? 150 : 82;
+    const cy = f.showcaseY;
     showcase.forEach((card, i) => {
       const off = i - 1;
       const bob = still ? 0 : Math.sin(t * 0.002 + i * 2) * 2;
@@ -596,14 +590,13 @@ export function createCanvasRenderer(): Renderer {
       if (still || Math.floor(t / 500) % 2 === 0) drawTextShadow(ctx, 'ENTER: PLAY    T: TUTORIAL', lw / 2, below.y + below.h + 6, PAL.grey, 1, 'center');
       if (view.chrome.error) drawTextShadow(ctx, view.chrome.error.toUpperCase().slice(0, 60), lw / 2, below.y + below.h + 16, PAL.red, 1, 'center');
     }
-    drawTextShadow(ctx, 'RULES BY ZACH GAGE AND KURT BIEG', lw / 2, lh - 12, PAL.greyDark, 1, 'center');
+    drawTextShadow(ctx, 'RULES BY ZACH GAGE AND KURT BIEG', lw / 2, f.footerY, PAL.greyDark, 1, 'center');
   };
 
   const drawResult = (ctx: Ctx, view: GameView, layout: LayoutSnapshot, lw: number, lh: number): void => {
     ctx.fillStyle = 'rgba(8,4,16,0.6)';
     ctx.fillRect(0, 0, lw, lh);
-    const portrait = layout.orientation === 'portrait';
-    const r: Rect = portrait ? { x: 25, y: 150, w: 220, h: 190 } : { x: 130, y: 52, w: 220, h: 170 };
+    const r: Rect = frameOf(layout).result;
     panel(ctx, r, PAL.night, view.phase === 'won' ? PAL.gold : PAL.redDark, 0.95);
     const won = view.phase === 'won';
     drawTextOutline(ctx, won ? 'ESCAPED!' : 'SLAIN', lw / 2, r.y + 14, won ? PAL.gold : PAL.red, 4, 'center');
@@ -618,7 +611,7 @@ export function createCanvasRenderer(): Renderer {
   const drawMenu = (ctx: Ctx, view: GameView, layout: LayoutSnapshot, lw: number, lh: number): void => {
     ctx.fillStyle = 'rgba(8,4,16,0.65)';
     ctx.fillRect(0, 0, lw, lh);
-    const f = frameFor(layout.orientation);
+    const f = frameOf(layout);
     panel(ctx, f.menu, PAL.night, PAL.panelEdge, 0.97);
     const { title } = menuRows(f.menu);
     drawTextOutline(ctx, 'SETTINGS', lw / 2, title, PAL.gold, 2, 'center');
@@ -630,7 +623,7 @@ export function createCanvasRenderer(): Renderer {
     const w = measureText(text) + 14;
     const x = Math.round(lw / 2 - w / 2);
     // In the tutorial the coach strip owns the bottom of the screen: the toast floats just above it.
-    const y = layout.coach ? layout.coach.y - 15 : layout.orientation === 'portrait' ? 428 : 246;
+    const y = layout.coach ? layout.coach.y - 15 : frameOf(layout).toastY;
     ctx.fillStyle = PAL.ink;
     ctx.fillRect(x, y, w, 13);
     ctx.fillStyle = PAL.redDark;
@@ -659,7 +652,7 @@ export function createCanvasRenderer(): Renderer {
 
     draw(view, layout, fx, timeMs) {
       if (!display) return;
-      const { w: lw, h: lh } = logicalSize(layout.orientation);
+      const { w: lw, h: lh } = logicalOf(layout);
       ensureScene(lw, lh);
       const ctx = sctx;
       const still = view.chrome.settings.reducedMotion;
@@ -670,7 +663,7 @@ export function createCanvasRenderer(): Renderer {
 
       ctx.save();
       ctx.translate(Math.round(fx.shake.x), Math.round(fx.shake.y));
-      if (view.chrome.screen === 'title') drawTitle(ctx, view, layout, timeMs, still, lw, lh);
+      if (view.chrome.screen === 'title') drawTitle(ctx, view, layout, timeMs, still, lw);
       else drawGame(ctx, view, layout, fx, timeMs, still, lw, lh);
       ctx.restore();
 
@@ -708,7 +701,7 @@ export function createCanvasRenderer(): Renderer {
     },
 
     hitTest(cssX, cssY, layout) {
-      const { w: lw, h: lh } = logicalSize(layout.orientation);
+      const { w: lw, h: lh } = logicalOf(layout);
       let u = cssX / cssW;
       let v = cssY / cssH;
       if (crtActive()) [u, v] = warpUv(u, v, crtParams.curvature);
@@ -722,7 +715,7 @@ export function createCanvasRenderer(): Renderer {
       if (layout.coach && contains(layout.coach, x, y)) {
         return layout.buttons.has('tutorialNext') ? { kind: 'button', id: 'tutorialNext' } : null;
       }
-      const f = frameFor(layout.orientation);
+      const f = frameOf(layout);
       const entries = [...layout.cards.entries()].reverse();
       for (const [cardId, r] of entries) {
         const isRoom = r.y === f.roomY;

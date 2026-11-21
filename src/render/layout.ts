@@ -1,6 +1,7 @@
 /**
  * Layout: home rects for every card, pile and button, per orientation. Pure. Owner: Starbuck.
- * Landscape = 480x270 logical (desktop, phones held sideways). Portrait = 270x480 logical (phones upright).
+ * Landscape = W x 270 logical (desktop, phones held sideways). Portrait = 270 x H logical (phones upright).
+ * W/H run from 480 (16:9) to 660 (22:9) by viewport aspect (render/screen.ts); the frames stretch to use it.
  * FX tweens cards toward these homes; render draws them; hitTest tests against them.
  *
  * Design Review 2 (tutorial): the title TUTORIAL button, the first-launch offer, the coach strip, the recap
@@ -11,10 +12,11 @@ import type { RegionId } from '../tutorial';
 import type { ButtonId, GameView, LayoutSnapshot, Rect } from '../ui/view';
 import type { Viewport } from './types';
 import { CARD_H, CARD_W } from './theme';
+import { baseSize, screenGeometry } from './screen';
 
 const r = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
 
-interface Frame {
+export interface Frame {
   readonly deck: Rect;
   readonly discard: Rect;
   readonly hpMeter: Rect;
@@ -28,6 +30,8 @@ interface Frame {
   readonly actions: { readonly avoid: Rect; readonly fightWeapon: Rect; readonly fightBarehanded: Rect; readonly cancel: Rect };
   readonly play: Rect;
   readonly resultNewGame: Rect;
+  /** Result panel (drawn behind resultNewGame). */
+  readonly result: Rect;
   readonly menu: Rect;
   /** Title-screen TUTORIAL button (under PLAY). */
   readonly tutorial: Rect;
@@ -37,62 +41,149 @@ interface Frame {
   readonly coach: Rect;
   /** Recap panel (replaces the result panel at the end of the tutorial). */
   readonly recap: Rect;
+  /** Top bar: text row top and the score's left edge. */
+  readonly topY: number;
+  readonly scoreX: number;
+  /** Hint line centre, toast top, title-screen footer row. */
+  readonly hint: { readonly x: number; readonly y: number };
+  readonly toastY: number;
+  readonly footerY: number;
+  /** Title screen: logo top and showcase-fan top. */
+  readonly logoY: number;
+  readonly showcaseY: number;
 }
 
-const LANDSCAPE: Frame = {
-  deck: r(24, 30, CARD_W, CARD_H),
-  discard: r(400, 30, CARD_W, CARD_H),
-  hpMeter: r(16, 134, 88, 72),
-  weapon: r(124, 134, CARD_W, CARD_H),
-  roomX: [113, 179, 245, 311],
-  roomY: 30,
-  fanRight: 356,
-  mute: r(444, 3, 14, 13),
-  settings: r(461, 3, 14, 13),
-  actions: {
-    avoid: r(370, 150, 94, 24),
-    fightWeapon: r(370, 136, 94, 22),
-    fightBarehanded: r(370, 162, 94, 22),
-    cancel: r(370, 188, 94, 16),
-  },
-  play: r(186, 184, 108, 24),
-  resultNewGame: r(186, 186, 108, 24),
-  menu: r(130, 36, 220, 200),
-  tutorial: r(196, 213, 88, 18),
-  offer: r(100, 62, 280, 116),
-  // Below the weapon-tray captions (y 227-232) so the MAX limit badge stays visible during the dulling lessons.
-  coach: r(8, 234, 464, 33),
-  recap: r(40, 37, 400, 196),
-};
+/**
+ * Landscape (W x 270). The design is the 480-wide frame; extra width E (up to 180 at 22:9, less the safe insets)
+ * widens the gaps between room cards (up to +10 each, which also lengthens the weapon tray and slain fan) and
+ * pushes the deck/HP column and the discard/action column away from the centre group, a third of it as margin.
+ */
+function landscapeFrame(lh: number, c: Rect): Frame {
+  const x0 = c.x;
+  const x1 = c.x + c.w;
+  const E = Math.max(0, c.w - 480);
+  const C = Math.round(c.x + c.w / 2);
+  const gg = Math.min(10, Math.floor(E / 12));
+  const gap = 10 + gg;
+  const total = 4 * CARD_W + 3 * gap;
+  const rx0 = Math.round(C - total / 2);
+  const roomX = [0, 1, 2, 3].map((i) => rx0 + i * (CARD_W + gap));
+  const m = Math.floor(Math.max(0, (E - 3 * gg) / 2) / 3);
+  const L = x0 + m;
+  const R = x1 - m;
+  const ax = R - 110;
+  return {
+    deck: r(L + 24, 30, CARD_W, CARD_H),
+    discard: r(R - 80, 30, CARD_W, CARD_H),
+    hpMeter: r(L + 16, 134, 88, 72),
+    weapon: r(rx0 + 11, 134, CARD_W, CARD_H),
+    roomX,
+    roomY: 30,
+    fanRight: (roomX[3] ?? 0) + CARD_W - 11,
+    mute: r(x1 - 36, 3, 14, 13),
+    settings: r(x1 - 19, 3, 14, 13),
+    actions: {
+      avoid: r(ax, 150, 94, 24),
+      fightWeapon: r(ax, 136, 94, 22),
+      fightBarehanded: r(ax, 162, 94, 22),
+      cancel: r(ax, 188, 94, 16),
+    },
+    play: r(C - 54, 184, 108, 24),
+    resultNewGame: r(C - 54, 186, 108, 24),
+    result: r(C - 110, 52, 220, 170),
+    menu: r(C - 110, 36, 220, 200),
+    tutorial: r(C - 44, 213, 88, 18),
+    offer: r(C - 140, 62, 280, 116),
+    // Below the weapon-tray captions (y 227-232) so the MAX limit badge stays visible during the dulling lessons.
+    coach: r(x0 + 8, 234, c.w - 16, 33),
+    recap: r(C - 200, 37, 400, 196),
+    topY: 0,
+    scoreX: x0 + 8,
+    hint: { x: C, y: 232 },
+    toastY: 246,
+    footerY: lh - 12,
+    logoY: 26,
+    showcaseY: 82,
+  };
+}
 
-const PORTRAIT: Frame = {
-  deck: r(14, 28, CARD_W, CARD_H),
-  discard: r(200, 28, CARD_W, CARD_H),
-  hpMeter: r(78, 34, 114, 66),
-  weapon: r(16, 228, CARD_W, CARD_H),
-  roomX: [11, 75, 139, 203],
-  roomY: 124,
-  fanRight: 256,
-  mute: r(234, 3, 14, 13),
-  settings: r(252, 3, 14, 13),
-  actions: {
-    avoid: r(35, 338, 200, 28),
-    fightWeapon: r(35, 330, 200, 26),
-    fightBarehanded: r(35, 362, 200, 26),
-    cancel: r(35, 394, 200, 20),
-  },
-  play: r(75, 318, 120, 30),
-  resultNewGame: r(75, 300, 120, 28),
-  menu: r(20, 96, 230, 260),
-  tutorial: r(85, 356, 100, 24),
-  offer: r(12, 146, 246, 170),
-  // Below the fight/avoid/cancel buttons (which end at y 414).
-  coach: r(6, 416, 258, 60),
-  recap: r(8, 94, 254, 292),
-};
+/**
+ * Portrait (270 x H). The design is the 480-tall frame; the cards cannot grow (four 56px cards fill the 270 width),
+ * so extra height E (up to 180 at 22:9, less the safe insets) opens the bands: 12% above the deck row, 28% above
+ * the room, 22% above the weapon tray (the hint line sits in the middle of it), 18% above the fight buttons, and
+ * the last 20% makes the coach strip taller (that band is empty outside the tutorial, so it gets the least). Overlays centre in the content box; the title screen spreads out.
+ */
+function portraitFrame(lw: number, c: Rect): Frame {
+  const y0 = c.y;
+  const E = Math.max(0, c.h - 480);
+  const g1 = Math.round(E * 0.12);
+  const g2 = Math.round(E * 0.28);
+  const g3 = Math.round(E * 0.22);
+  const g4 = Math.round(E * 0.18);
+  const o2 = g1 + g2;
+  const o3 = o2 + g3;
+  const o4 = o3 + g4;
+  const mid = y0 + Math.round(E / 2);
+  const title = (k: number): number => y0 + Math.round(E * k);
+  return {
+    deck: r(14, y0 + 28 + g1, CARD_W, CARD_H),
+    discard: r(200, y0 + 28 + g1, CARD_W, CARD_H),
+    hpMeter: r(78, y0 + 34 + g1, 114, 66),
+    weapon: r(16, y0 + 228 + o3, CARD_W, CARD_H),
+    roomX: [11, 75, 139, 203],
+    roomY: y0 + 124 + o2,
+    fanRight: 256,
+    mute: r(234, y0 + 3, 14, 13),
+    settings: r(252, y0 + 3, 14, 13),
+    actions: {
+      avoid: r(35, y0 + 338 + o4, 200, 28),
+      fightWeapon: r(35, y0 + 330 + o4, 200, 26),
+      fightBarehanded: r(35, y0 + 362 + o4, 200, 26),
+      cancel: r(35, y0 + 394 + o4, 200, 20),
+    },
+    play: r(75, title(0.6) + 318, 120, 30),
+    resultNewGame: r(75, mid + 300, 120, 28),
+    result: r(25, mid + 150, 220, 190),
+    menu: r(20, mid + 96, 230, 260),
+    tutorial: r(85, title(0.6) + 356, 100, 24),
+    offer: r(12, mid + 146, 246, 170),
+    // Below the fight/avoid/cancel buttons (which end at y 414 + o4); takes the rest of the box.
+    coach: r(6, y0 + 416 + o4, 258, 60 + E - o4),
+    recap: r(8, mid + 94, 254, 292),
+    topY: y0,
+    scoreX: 8,
+    hint: { x: Math.round(lw / 2), y: y0 + 210 + o2 + Math.round(g3 / 2) },
+    toastY: y0 + 428 + o4,
+    footerY: c.y + c.h - 12,
+    logoY: title(0.3) + 64,
+    showcaseY: title(0.45) + 150,
+  };
+}
 
-export function frameFor(orientation: 'portrait' | 'landscape'): Frame {
-  return orientation === 'portrait' ? PORTRAIT : LANDSCAPE;
+let frameCache: { key: string; frame: Frame } | null = null;
+
+/**
+ * Frame for an orientation and (optionally) a logical size and safe box. Without them it is the 16:9 design frame.
+ * Memoised on the last key (render, coach and hitTest all ask for the same frame every frame).
+ */
+export function frameFor(orientation: 'portrait' | 'landscape', logical?: { readonly w: number; readonly h: number }, safe?: Rect): Frame {
+  const size = logical ?? baseSize(orientation);
+  const box = safe ?? r(0, 0, size.w, size.h);
+  const key = `${orientation}|${size.w}x${size.h}|${box.x},${box.y},${box.w},${box.h}`;
+  if (frameCache?.key === key) return frameCache.frame;
+  const frame = orientation === 'portrait' ? portraitFrame(size.w, box) : landscapeFrame(size.h, box);
+  frameCache = { key, frame };
+  return frame;
+}
+
+/** The frame a LayoutSnapshot was built from. */
+export function frameOf(layout: LayoutSnapshot): Frame {
+  return frameFor(layout.orientation, layout.logical, layout.safe);
+}
+
+/** Logical canvas size of a LayoutSnapshot (the 16:9 base size when it carries none). */
+export function logicalOf(layout: LayoutSnapshot): { w: number; h: number } {
+  return layout.logical ? { w: layout.logical.w, h: layout.logical.h } : baseSize(layout.orientation);
 }
 
 /** Settings-menu rows, shared by layout (buttons) and render (labels). */
@@ -243,7 +334,7 @@ function regionsFor(f: Frame, orientation: 'portrait' | 'landscape'): ReadonlyMa
   const tray = trayRect(f);
   const m = new Map<RegionId, Rect>();
   m.set('hp', f.hpMeter);
-  m.set('score', r(5, 2, 58, 11));
+  m.set('score', r(f.scoreX - 3, f.topY + 2, 58, 11));
   m.set('deck', r(f.deck.x - 2, f.deck.y - 4, f.deck.w + 4, f.deck.h + 15));
   m.set('discard', r(f.discard.x - 2, f.discard.y - 4, f.discard.w + 4, f.discard.h + 15));
   m.set('room', roomPanelRect(f));
@@ -257,7 +348,9 @@ function regionsFor(f: Frame, orientation: 'portrait' | 'landscape'): ReadonlyMa
 
 export function computeLayout(view: GameView, viewport: Viewport): LayoutSnapshot {
   const orientation = viewport.orientation;
-  const f = frameFor(orientation);
+  const geo = screenGeometry(viewport);
+  const logical = { w: geo.w, h: geo.h };
+  const f = frameFor(orientation, logical, geo.safe);
   const cards = new Map<CardId, Rect>();
   const buttons = new Map<ButtonId, Rect>();
   const chrome = view.chrome;
@@ -267,7 +360,7 @@ export function computeLayout(view: GameView, viewport: Viewport): LayoutSnapsho
   const offer = !inGame && chrome.tutorialOffer === true;
 
   const snapshot = (): LayoutSnapshot => {
-    const base = { cards, deck: f.deck, discard: f.discard, weapon: f.weapon, hpMeter: f.hpMeter, buttons, orientation };
+    const base = { cards, deck: f.deck, discard: f.discard, weapon: f.weapon, hpMeter: f.hpMeter, buttons, orientation, logical, safe: geo.safe };
     if (tutorial) return { ...base, regions: regionsFor(f, orientation), coach: recap ? f.recap : f.coach };
     return base;
   };

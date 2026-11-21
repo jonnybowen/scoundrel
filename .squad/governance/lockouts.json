@@ -98,6 +98,29 @@
       "overrides": [],
       "updatedAt": "2026-11-21T09:55:46.784Z",
       "successor": "tyrol"
+    },
+    {
+      "subject": "fullscreen-layout",
+      "paths": [
+        "src/render/screen.ts",
+        "src/render/layout.ts",
+        "src/render/renderer.ts",
+        "src/render/coach.ts",
+        "src/ui/app.ts",
+        "src/ui/view.ts",
+        "index.html",
+        "tests/unit/screen.test.ts",
+        "tests/e2e/fullscreen.spec.ts"
+      ],
+      "state": "cleared",
+      "lockedAuthors": [
+        "starbuck"
+      ],
+      "reviewer": "adama",
+      "reason": "R1 5% upscale only at dpr>=2 (keep 20% at dpr<2) with tests pinning 1600x900@1, 2560x1440@1 integer and S22+/Pixel7 4x; R2 refresh layout in onResize so hitTest never uses stale layout, with test; R3 minimum long-axis HUD margin regardless of reported insets (or real-device screenshots). Clears on re-review by Adama or Tigh.",
+      "overrides": [],
+      "updatedAt": "2026-11-21T17:01:38.939Z",
+      "successor": "tyrol"
     }
   ]
 }

@@ -4,7 +4,10 @@
  */
 import type { CrtParams } from './types';
 
-/** Landscape logical resolution (16:9). Portrait swaps the axes (270x480). */
+/**
+ * Base (16:9) logical resolution; portrait swaps the axes (270x480). The live size adapts to the viewport aspect
+ * (short side 270, long side 480..660): see render/screen.ts and LayoutSnapshot.logical.
+ */
 export const LOGICAL_WIDTH = 480;
 export const LOGICAL_HEIGHT = 270;
 

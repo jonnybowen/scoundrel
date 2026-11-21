@@ -14,8 +14,8 @@ import type { CoachFx, FxFrame } from '../fx/types';
 import type { CoachView, SpotlightTarget } from '../tutorial';
 import type { ButtonId, GameView, LayoutSnapshot, Rect } from '../ui/view';
 import { drawText, drawTextOutline, drawTextShadow, measureText } from './font';
-import { coachParts, frameFor, offerParts, recapParts } from './layout';
-import { PAL, logicalSize } from './theme';
+import { coachParts, frameOf, logicalOf, offerParts, recapParts } from './layout';
+import { PAL } from './theme';
 import { BTN, button, panel, wrapText, type ButtonStyle } from './widgets';
 
 type Ctx = CanvasRenderingContext2D;
@@ -97,7 +97,7 @@ export function drawSpotlight(ctx: Ctx, view: GameView, layout: LayoutSnapshot, 
   const coach = activeCoach(view);
   if (!coach) return;
   const rects = coach.spotlight.map((t) => spotlightRect(t, layout)).filter((r): r is Rect => r !== null);
-  const { w, h } = logicalSize(layout.orientation);
+  const { w, h } = logicalOf(layout);
   if (coach.dim) {
     const d = dimLayer(w, h);
     if (d && dimCanvas) {
@@ -266,7 +266,7 @@ export function drawCoach(ctx: Ctx, view: GameView, layout: LayoutSnapshot, fx: 
 // Full overlays.
 
 function veil(ctx: Ctx, layout: LayoutSnapshot, alpha: number): void {
-  const { w, h } = logicalSize(layout.orientation);
+  const { w, h } = logicalOf(layout);
   ctx.fillStyle = `rgba(8,4,16,${alpha})`;
   ctx.fillRect(0, 0, w, h);
 }
@@ -285,7 +285,7 @@ export function drawRecap(ctx: Ctx, view: GameView, layout: LayoutSnapshot): voi
   const recap = t?.phase === 'recap' ? t.recap : null;
   if (!recap) return;
   veil(ctx, layout, 0.7);
-  const box = layout.coach ?? frameFor(layout.orientation).recap;
+  const box = layout.coach ?? frameOf(layout).recap;
   const parts = recapParts(box, layout.orientation);
   const cx = Math.round(box.x + box.w / 2);
   panel(ctx, box, PAL.night, PAL.gold, 0.97);
@@ -324,7 +324,7 @@ export function drawRecap(ctx: Ctx, view: GameView, layout: LayoutSnapshot): voi
 export function drawOffer(ctx: Ctx, view: GameView, layout: LayoutSnapshot): void {
   if (!view.chrome.tutorialOffer || view.chrome.screen !== 'title') return;
   veil(ctx, layout, 0.55);
-  const box = frameFor(layout.orientation).offer;
+  const box = frameOf(layout).offer;
   const parts = offerParts(box, layout.orientation);
   const cx = Math.round(box.x + box.w / 2);
   panel(ctx, box, PAL.night, PAL.gold, 0.97);

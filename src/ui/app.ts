@@ -294,12 +294,39 @@ export function createApp(opts: AppOptions): App {
     const vv = window.visualViewport;
     const w = vv?.width ?? window.innerWidth;
     const h = vv?.height ?? window.innerHeight;
+    const safeArea = readSafeArea();
     return {
       cssWidth: w,
       cssHeight: h,
       devicePixelRatio: window.devicePixelRatio || 1,
       orientation: h > w ? 'portrait' : 'landscape',
+      ...(safeArea ? { safeArea } : {}),
     };
+  }
+
+  /**
+   * Safe-area insets in CSS px: the larger of env(safe-area-inset-*) (needs viewport-fit=cover) and Capacitor's
+   * injected --safe-area-inset-* variables (its SystemBars plugin sets them from the cutout insets, which older
+   * WebViews do not expose through env()). Read through a hidden probe's computed padding.
+   */
+  function readSafeArea(): Viewport['safeArea'] | null {
+    const doc = canvas.ownerDocument;
+    const win = doc.defaultView;
+    if (!doc.body || !win) return null;
+    let probe = doc.getElementById('safe-probe');
+    if (!probe) {
+      probe = doc.createElement('div');
+      probe.id = 'safe-probe';
+      probe.setAttribute('aria-hidden', 'true');
+      const side = (s: string): string => `max(env(safe-area-inset-${s}, 0px), var(--safe-area-inset-${s}, 0px))`;
+      probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+        + `padding:${side('top')} ${side('right')} ${side('bottom')} ${side('left')};`;
+      doc.body.appendChild(probe);
+    }
+    const cs = win.getComputedStyle(probe);
+    const px = (v: string): number => Math.max(0, parseFloat(v) || 0);
+    const inset = { top: px(cs.paddingTop), right: px(cs.paddingRight), bottom: px(cs.paddingBottom), left: px(cs.paddingLeft) };
+    return inset.top || inset.right || inset.bottom || inset.left ? inset : null;
   }
 
   const buildView = (): GameView => {
@@ -519,7 +546,12 @@ export function createApp(opts: AppOptions): App {
   const onResize = (): void => {
     viewport = readViewport();
     renderer.resize(viewport);
+    // Rebuild lastLayout now: the renderer already maps taps with the new CSS size, so a tap before the next frame
+    // must hit-test against the new logical size and rects, not the previous ones.
+    refresh();
   };
+  // Capacitor injects --safe-area-inset-* on <html> after load and on rotation, without a resize event.
+  const insetObserver = typeof MutationObserver === 'undefined' ? null : new MutationObserver(onResize);
 
   // ----- #coach-live (screen readers + e2e hook; docs/TUTORIAL.md "Accessibility and test hook") ----------
 
@@ -624,6 +656,7 @@ export function createApp(opts: AppOptions): App {
       window.addEventListener('keydown', onKeyDown);
       window.addEventListener('resize', onResize);
       window.visualViewport?.addEventListener('resize', onResize);
+      insetObserver?.observe(canvas.ownerDocument.documentElement, { attributes: true, attributeFilter: ['style'] });
       raf = requestAnimationFrame(frame);
     },
     stop() {
@@ -635,6 +668,7 @@ export function createApp(opts: AppOptions): App {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('resize', onResize);
       window.visualViewport?.removeEventListener('resize', onResize);
+      insetObserver?.disconnect();
       for (const off of unsubscribers.splice(0)) safe(off);
       tutorial.exit();
       session = null;

@@ -272,6 +272,13 @@ export interface LayoutSnapshot {
   readonly regions?: ReadonlyMap<RegionId, Rect>;
   /** Design Review 2: the coach panel rect (or recap panel). Present while the tutorial runs. */
   readonly coach?: Rect;
+  /**
+   * Logical canvas size for this layout (viewport-dependent: short side 270, long side 480..660 by aspect).
+   * Absent = the 16:9 base size for the orientation (480x270 / 270x480).
+   */
+  readonly logical?: { readonly w: number; readonly h: number };
+  /** Safe content box in logical px (clear of display cutout / gesture bar). Absent = the whole canvas. */
+  readonly safe?: Rect;
 }
 
 /** What a pointer is over. Produced by Renderer.hitTest. */

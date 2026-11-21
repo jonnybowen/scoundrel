@@ -34,3 +34,10 @@
 - Tests: src/tutorial/machine.test.ts (17) covers a golden playthrough with HP 20,20,10,14,10,20 and a win score of 30, the gate at every step, paging, desync and the deck option. Full suite: 256 tests, 19 files, green. typecheck green.
 
 - 2026-11-20 (tutorial-ui lockout fix): #coach-live data-ready must come from the frame's latch state, not from fx.isBusy() after fx.update. app.ts refresh() records chromeLatched when it calls tutorial.chrome(), and mirrorCoach needs !chromeLatched && !fx.isBusy(). Learning: any value derived from state that is sampled before fx.update must not be re-checked against state sampled after it. A MutationObserver (step|ready) log in e2e catches these one-frame races reliably; the old code produced "r1Equip|false r1Equip|true r1Fight|true".
+
+
+### 2026-11-21: fullscreen-layout revision (successor to Starbuck after Adama REJECT)
+- The integer upscale threshold depends on dpr: 20% at dpr < 2 and 5% at dpr >= 2. If the long axis is derived only from floor(longDev/scale), a 16:9 window that snaps to an integer scale grows past 480 (1600x900@1 became 533x270). Capping it at the viewport aspect keeps 16:9 at 480x270.
+- The safe box applies max(inset, CHROME_EDGE) and counts any letterbox towards the minimum. 16:9 has no spare length, so its frames do not change.
+- Resize: lastLayout must be rebuilt in the same handler as renderer.resize. The e2e test proves it by dispatching a pointerdown from inside a window 'resize' listener added after the app's own listener, with an rAF counter to show no frame ran in between.
+- The e2e suite runs against `npm run build && preview`, with reuseExistingServer when not in CI. Check that nothing stale is listening on :4173 first.
