@@ -107,24 +107,60 @@ function landscapeFrame(lh: number, c: Rect): Frame {
   };
 }
 
+/** Gap kept between the action dock and the bottom of the safe box in tall portrait play (thumb reach, clear of the gesture handle). */
+export const DOCK_PAD = 10;
+
 /**
- * Portrait (270 x H). The design is the 480-tall frame; the cards cannot grow (four 56px cards fill the 270 width),
- * so extra height E (up to 180 at 22:9, less the safe insets) opens the bands: 12% above the deck row, 28% above
- * the room, 22% above the weapon tray (the hint line sits in the middle of it), 18% above the fight buttons, and
- * the last 20% makes the coach strip taller (that band is empty outside the tutorial, so it gets the least). Overlays centre in the content box; the title screen spreads out.
+ * Portrait (270 x H). The design is the 480-tall frame; the cards cannot grow (four 56px cards fill the 270 width,
+ * and sprites only scale by whole numbers), so the extra height E (up to 180 at 22:9, less the safe insets) is spent
+ * on the bands and on the action buttons. Two variants share the board geometry rules:
+ *
+ * - play (no tutorial): the 60px band under the buttons, which only the coach strip ever used, is reclaimed (at twice
+ *   the rate E grows, so 16:9 is unchanged and anything from ~18.5:9 up is fully anchored). The action dock then sits
+ *   DOCK_PAD above the safe bottom: CANCEL (fight) and AVOID (choosing) share the bottom edge, in thumb reach. The
+ *   fight and avoid buttons grow up to 4px taller. The hint line moves into the dock, right above AVOID (it is hidden
+ *   during a fight choice in portrait, when the fight buttons fill that space). What is left opens the bands
+ *   (16% above the deck row, 34% above the room, 20% room to tray, 30% tray to dock).
+ * - coach (tutorial): as before, the buttons sit above the coach strip at the bottom. The strip grows by at most 12px;
+ *   the rest of E opens the same four bands (15/35/27.5/22.5%), so the strip never turns into a mostly empty box.
+ *
+ * Overlays centre in the content box; the title screen spreads out and anchors PLAY / TUTORIAL low.
  */
-function portraitFrame(lw: number, c: Rect): Frame {
+function portraitFrame(lw: number, c: Rect, coach: boolean): Frame {
   const y0 = c.y;
   const E = Math.max(0, c.h - 480);
-  const g1 = Math.round(E * 0.12);
-  const g2 = Math.round(E * 0.28);
-  const g3 = Math.round(E * 0.22);
-  const g4 = Math.round(E * 0.18);
+  // Play reclaims the empty coach band (60 + the 6px gap under CANCEL, less the dock pad).
+  const reclaim = coach ? 0 : Math.min(2 * E, 66 - DOCK_PAD);
+  const coachGrow = coach ? Math.min(12, Math.round(E * 0.2)) : 0;
+  const bh = coach ? 0 : Math.min(4, Math.floor((E + reclaim) / 25));
+  const spread = E + reclaim - coachGrow - 2 * bh;
+  const share = coach ? [0.15, 0.35, 0.275] : [0.16, 0.34, 0.2];
+  const g1 = Math.round(spread * share[0]!);
+  const g2 = Math.round(spread * share[1]!);
+  const g3 = Math.round(spread * share[2]!);
+  const g4 = spread - g1 - g2 - g3;
   const o2 = g1 + g2;
   const o3 = o2 + g3;
   const o4 = o3 + g4;
   const mid = y0 + Math.round(E / 2);
   const title = (k: number): number => y0 + Math.round(E * k);
+  // Fight cluster (top to bottom): FIGHT WITH weapon, barehanded, CANCEL. AVOID shares CANCEL's bottom edge once the
+  // dock has room (at 16:9 it keeps its old place, 48px higher).
+  const fwY = y0 + 330 + o4;
+  const fbY = fwY + 32 + bh;
+  const cancelY = fbY + 32 + bh;
+  const dockBottom = cancelY + 20;
+  const avoidH = 28 + bh;
+  const avoidY = dockBottom - Math.max(0, 48 - 2 * E) - avoidH;
+  // Hint line: inside the dock right above AVOID when there is room, else between the room and the weapon tray.
+  const docked = !coach && avoidY - fwY >= 24;
+  const hintY = docked ? avoidY - 14 : y0 + 210 + o2 + Math.round(g3 / 2);
+  // Toast: between the tray captions and the FIGHT WITH caption when that band is tall enough, else under CANCEL.
+  const capBottom = y0 + 228 + o3 + 98;
+  const band = fwY - 10 - capBottom;
+  const toastY = !coach && band >= 13 ? capBottom + Math.floor((band - 13) / 2) : Math.min(dockBottom + 14, y0 + c.h - 13);
+  // Title: PLAY / TUTORIAL anchor low (the same reclaim idea, up to 40px), logo and showcase spread above them.
+  const titleLow = E + Math.min(2 * E, 40);
   return {
     deck: r(14, y0 + 28 + g1, CARD_W, CARD_H),
     discard: r(200, y0 + 28 + g1, CARD_W, CARD_H),
@@ -136,49 +172,62 @@ function portraitFrame(lw: number, c: Rect): Frame {
     mute: r(234, y0 + 3, 14, 13),
     settings: r(252, y0 + 3, 14, 13),
     actions: {
-      avoid: r(35, y0 + 338 + o4, 200, 28),
-      fightWeapon: r(35, y0 + 330 + o4, 200, 26),
-      fightBarehanded: r(35, y0 + 362 + o4, 200, 26),
-      cancel: r(35, y0 + 394 + o4, 200, 20),
+      avoid: r(35, avoidY, 200, avoidH),
+      fightWeapon: r(35, fwY, 200, 26 + bh),
+      fightBarehanded: r(35, fbY, 200, 26 + bh),
+      cancel: r(35, cancelY, 200, 20),
     },
-    play: r(75, title(0.6) + 318, 120, 30),
+    play: r(75, y0 + titleLow + 318, 120, 30),
     resultNewGame: r(75, mid + 300, 120, 28),
     result: r(25, mid + 150, 220, 190),
     menu: r(20, mid + 96, 230, 260),
-    tutorial: r(85, title(0.6) + 356, 100, 24),
+    tutorial: r(85, y0 + titleLow + 356, 100, 24),
     offer: r(12, mid + 146, 246, 170),
-    // Below the fight/avoid/cancel buttons (which end at y 414 + o4); takes the rest of the box.
-    coach: r(6, y0 + 416 + o4, 258, 60 + E - o4),
+    // Coach mode: below the fight/avoid/cancel buttons (which end at y 414 + o4), down to 4px above the safe bottom.
+    // Only the coach frame's strip is ever used (a snapshot carries `coach` only in the tutorial).
+    coach: r(6, y0 + 416 + o4, 258, 60 + coachGrow),
     recap: r(8, mid + 94, 254, 292),
     topY: y0,
     scoreX: 8,
-    hint: { x: Math.round(lw / 2), y: y0 + 210 + o2 + Math.round(g3 / 2) },
-    toastY: y0 + 428 + o4,
+    hint: { x: Math.round(lw / 2), y: hintY },
+    toastY,
     footerY: c.y + c.h - 12,
-    logoY: title(0.3) + 64,
-    showcaseY: title(0.45) + 150,
+    logoY: title(0.35) + 64,
+    showcaseY: title(0.75) + 150,
   };
 }
 
 let frameCache: { key: string; frame: Frame } | null = null;
 
 /**
+ * Frame variant: 'coach' while the tutorial runs (its coach strip owns the bottom of a portrait screen), 'play'
+ * otherwise. Landscape frames are identical in both modes, and so are 16:9 portrait frames.
+ */
+export type FrameMode = 'play' | 'coach';
+
+/**
  * Frame for an orientation and (optionally) a logical size and safe box. Without them it is the 16:9 design frame.
  * Memoised on the last key (render, coach and hitTest all ask for the same frame every frame).
  */
-export function frameFor(orientation: 'portrait' | 'landscape', logical?: { readonly w: number; readonly h: number }, safe?: Rect): Frame {
+export function frameFor(
+  orientation: 'portrait' | 'landscape',
+  logical?: { readonly w: number; readonly h: number },
+  safe?: Rect,
+  mode: FrameMode = 'play',
+): Frame {
   const size = logical ?? baseSize(orientation);
   const box = safe ?? r(0, 0, size.w, size.h);
-  const key = `${orientation}|${size.w}x${size.h}|${box.x},${box.y},${box.w},${box.h}`;
+  const coach = orientation === 'portrait' && mode === 'coach';
+  const key = `${orientation}|${size.w}x${size.h}|${box.x},${box.y},${box.w},${box.h}|${coach ? 'coach' : 'play'}`;
   if (frameCache?.key === key) return frameCache.frame;
-  const frame = orientation === 'portrait' ? portraitFrame(size.w, box) : landscapeFrame(size.h, box);
+  const frame = orientation === 'portrait' ? portraitFrame(size.w, box, coach) : landscapeFrame(size.h, box);
   frameCache = { key, frame };
   return frame;
 }
 
-/** The frame a LayoutSnapshot was built from. */
+/** The frame a LayoutSnapshot was built from (a snapshot carries `coach` exactly when the tutorial runs). */
 export function frameOf(layout: LayoutSnapshot): Frame {
-  return frameFor(layout.orientation, layout.logical, layout.safe);
+  return frameFor(layout.orientation, layout.logical, layout.safe, layout.coach ? 'coach' : 'play');
 }
 
 /** Logical canvas size of a LayoutSnapshot (the 16:9 base size when it carries none). */
@@ -350,7 +399,6 @@ export function computeLayout(view: GameView, viewport: Viewport): LayoutSnapsho
   const orientation = viewport.orientation;
   const geo = screenGeometry(viewport);
   const logical = { w: geo.w, h: geo.h };
-  const f = frameFor(orientation, logical, geo.safe);
   const cards = new Map<CardId, Rect>();
   const buttons = new Map<ButtonId, Rect>();
   const chrome = view.chrome;
@@ -358,6 +406,7 @@ export function computeLayout(view: GameView, viewport: Viewport): LayoutSnapsho
   const tutorial = inGame ? chrome.tutorial ?? null : null;
   const recap = tutorial?.phase === 'recap' && tutorial.recap !== null;
   const offer = !inGame && chrome.tutorialOffer === true;
+  const f = frameFor(orientation, logical, geo.safe, tutorial ? 'coach' : 'play');
 
   const snapshot = (): LayoutSnapshot => {
     const base = { cards, deck: f.deck, discard: f.discard, weapon: f.weapon, hpMeter: f.hpMeter, buttons, orientation, logical, safe: geo.safe };

@@ -490,6 +490,15 @@ export function createCanvasRenderer(): Renderer {
       drawIcon(ctx, 'fist', layout.weapon.x + 20, layout.weapon.y + 26, PAL.greyDark, 3);
       drawText(ctx, 'BARE', layout.weapon.x + layout.weapon.w / 2, layout.weapon.y + 46, PAL.greyDark, 1, 'center');
       drawText(ctx, 'HANDED', layout.weapon.x + layout.weapon.w / 2, layout.weapon.y + 53, PAL.greyDark, 1, 'center');
+      // The empty tray is a big blank panel early in a run: say what it is for (static copy, no rules applied).
+      // The tutorial teaches this itself, so its board stays quiet.
+      if (!view.chrome.tutorial) {
+        const cx = Math.round((layout.weapon.x + layout.weapon.w + tray.x + tray.w) / 2);
+        const cy = layout.weapon.y + Math.round(layout.weapon.h / 2);
+        drawText(ctx, 'NO WEAPON', cx, cy - 10, PAL.greyDark, 1, 'center');
+        drawText(ctx, 'EQUIP A DIAMOND', cx, cy + 1, PAL.greyDark, 1, 'center');
+        drawText(ctx, 'TO BLOCK DAMAGE', cx, cy + 9, PAL.greyDark, 1, 'center');
+      }
     }
 
     // GameView's deck count drops before the deal lands; count cards FX is still holding back (opacity 0).

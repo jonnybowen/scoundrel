@@ -612,6 +612,39 @@ Advisories (not required): the remaining `void lh;` is in drawGame (it predates 
 
 Decision 2026-11-20 (c) is amended as Tyrol recorded: 20% at dpr < 2, 5% at dpr >= 2.
 
+### 2026-11-21: Tall portrait layout: frameFor gains a FrameMode ('play' | 'coach'); in play the action dock is anchored DOCK_PAD (10) above the safe bottom, the hint moves into the dock, and the empty weapon tray gets a static caption
+**By:** Starbuck
+**Recorded:** 2026-11-21T17-22-38
+**References:** Adama, Tyrol, Tigh, fullscreen-layout
+**Status:** Proposed by Starbuck; APPROVED by Adama's review gate (2026-11-21T17-30-15, next entry). Open advisories from that review: Tigh to add a tutorial (coach) state to the 8-viewport describe.each; the tray caption 'TO BLOCK DAMAGE' may become 'TO SOFTEN BLOWS' or 'TO REDUCE DAMAGE' at Starbuck's discretion.
+**Why:** Contract changes (src/render/layout.ts, render only; no game, fx, audio, android or screen.ts changes):
+1. `frameFor(orientation, logical?, safe?, mode: FrameMode = 'play')`. The new `FrameMode` is 'play' | 'coach'. `computeLayout` uses 'coach' when the tutorial runs. `frameOf(layout)` derives the mode from `layout.coach`, which a snapshot carries exactly when the tutorial runs, so render, coach.ts and hitTest always read the frame the snapshot was built from. The memo key includes the mode. Landscape ignores the mode. 16:9 portrait (E = 0) is identical in both modes, and a unit test pins the old constants.
+2. Portrait play mode: the 60px coach band under the buttons (empty outside the tutorial) is reclaimed at 2x the rate E grows, capped at 56. From about 18.5:9 up, CANCEL (fight) and AVOID (choosing) share a bottom edge `DOCK_PAD = 10` logical px above the safe bottom (exported). That puts it 18 logical px, or 72 device px, above the S22+ glass, clear of the gesture handle. The fight and avoid buttons grow by up to 4px (integer, no sprite scaling). The hint line moves into the dock, 14px above AVOID; it is already hidden during a portrait fight choice, when the fight buttons fill that space. The toast sits between the tray captions and FIGHT WITH, or under CANCEL when that band is too small. The remaining height opens the bands 16/34/20/30%.
+3. Portrait coach mode (tutorial): the buttons stay above the coach strip, as before. The strip grows by at most 12px (to 72), and the rest of E opens the bands 15/35/27.5/22.5%, so the strip is never a mostly empty box at 22:9.
+4. Title: PLAY and TUTORIAL anchor low (offset E + min(2E, 40)); the logo is at title(0.35) and the showcase at title(0.75). Overlays (offer, result, menu, recap) are unchanged: still centred on the content box.
+5. renderer.ts: outside the tutorial, the empty weapon tray shows static copy (NO WEAPON / EQUIP A DIAMOND / TO BLOCK DAMAGE) in greyDark. This is a pixel change at every aspect, 16:9 included, and is justified because the blank tray is the same problem everywhere. It uses no rules: it reads only `view.weapon === null`.
+S22+ portrait (270x585, safe 24..577), before -> after: deck row y 61 -> 71, room 177 -> 208, weapon 297 -> 336, AVOID 420-448 -> 535-567, CANCEL bottom 496 -> 567. The dead band under the lowest button during play was ~129 logical px and is now 10. Unit tests in tests/unit/screen.test.ts assert the DOCK_PAD gap for S22+ (with and without insets), Pixel 7 and 22:9, plus the ordering, containment and toast/hint clearance for every portrait height from 480 to 660 in both modes. New e2e tests/e2e/portrait.spec.ts taps CANCEL and AVOID near their bottom edges through the CRT warp at S22+, 22:9 and 16:9.
+
+### 2026-11-21: Review gate: APPROVE Starbuck's portrait-fill (tall portrait FrameMode play/coach, DOCK_PAD dock, static empty-tray caption)
+**By:** Adama
+**Recorded:** 2026-11-21T17-30-15
+**References:** Starbuck, Tigh, Tyrol, portrait-fill, fullscreen-layout
+**Why:** Verdict: APPROVE. Diff: src/render/layout.ts, src/render/renderer.ts, tests/unit/screen.test.ts, plus the new tests/e2e/portrait.spec.ts.
+
+Gates I ran myself: typecheck clean, vite build OK, npm test 399/399, and npm run test:e2e 55 passed / 23 skipped without SHOTS. Starbuck's 61/17 was with SHOTS=1. The skips grew only through portrait.spec.ts, which adds 24 tests: 12 are skipped on mobile-chromium because they set their own device, and 6 are SHOTS-only screenshot tests on desktop. The 5 baseline skips are the same tests as before (2 fallback CRT hover tests and 3 fullscreen tests on mobile). Nothing that ran before is now skipped.
+
+Checks against the decisions:
+- 16:9 and landscape are unchanged. I worked through the E=0 algebra (reclaim 0, bh 0, avoid 338, hint and toast fall back to the old positions, coach strip 60) and a unit test pins it in both modes. landscapeFrame is untouched, and its mode is ignored.
+- hitTest and the mode switch are correct. The mode is derived only from the snapshot (frameOf uses layout.coach, which computeLayout sets exactly when chrome.tutorial is set). The buttons, cards and frameOf(layout).roomY come from the same frame, and app.ts hitTests against lastLayout, the same snapshot that was drawn. So taps always map to the frame on screen. CRT unwarp is unchanged. I ran a scratch probe (now deleted) at all 8 viewports on the tutorial deal in coach and play mode. In each, the snapshot carries coach only in the tutorial, frameOf(layout).roomY matches all 4 room-card rects (a mismatch would classify a room tap as 'weapon'), everything sits inside the safe box, and no non-tutorial button, card or the weapon tray overlaps the coach strip.
+- The HUD keeps CHROME_EDGE: the existing S22+ test passes and the top bar is unchanged.
+- The 8-viewport invariants pass.
+- The display canvas is still 2D only; no canvas or GL code changed.
+- No rules in render. The empty-tray copy (NO WEAPON / EQUIP A DIAMOND / TO BLOCK DAMAGE) is accepted as static copy under the precedent of the hintText strings ('FACE THE ROOM, OR AVOID IT', 'WEAPON OR FISTS?') and the 'BARE HANDED' label. Its only condition is the view field view.weapon === null. It derives nothing from engine state and does not vary with rule options. The 2026-11-20 ruling forbids deriving rule outcomes (LETHAL, counts, HEAL/EQUIP by suit) in render, not printing fixed text.
+
+On the user's request: in S22+ play, the gap under the lowest button goes from about 129 logical px to 10 (DOCK_PAD). Screenshots confirm this.
+
+Advisories (not required): (1) Tigh: add a tutorial (coach) state to layouts() in the 8-viewport describe.each so coach mode is covered permanently; my probe covered it this time. (2) Copy: a weapon reduces damage rather than blocking all of it, so consider 'TO SOFTEN BLOWS' or 'TO REDUCE DAMAGE' (Starbuck, at her discretion). (3) The tray caption is a pixel change in landscape too; it is accepted because it is static copy and the rects are unchanged.
+
 ## Governance
 
 - All meaningful changes require team consensus

@@ -28,3 +28,10 @@
 - S22+ (412x892 @ 2.625) is now 270x585 at an exact 4x, for a 99.8% fill in both orientations (it was 81.9% with the fixed 16:9 frame). 16:9 is pixel-identical to before, so the CRT A/B hit-test e2e is untouched.
 - Landscape extra width widens the room gaps (up to +10 each) and pushes the side columns out. Portrait extra height opens the vertical bands (12/28/22/18%) and gives the rest to the coach strip.
 - Gotchas: Capacitor's SystemBars injects --safe-area-inset-* on <html> after load without firing resize, so app.ts watches it with a MutationObserver. In Playwright, an addInitScript that sets documentElement style does not stick, so set the variables with page.evaluate after goto. A 2340x1080 CRT pass under software GL is slow: give phone-size e2e tests a long timeout.
+
+### 2026-11-21: Tall portrait fills the screen (action dock anchored low)
+- Files: src/render/layout.ts (FrameMode 'play' | 'coach', DOCK_PAD, new portraitFrame), src/render/renderer.ts (empty-tray caption), tests/unit/screen.test.ts (dock and sweep tests), new tests/e2e/portrait.spec.ts (warp taps near the bottom edge, plus SCREENSHOT_DIR shots of title, game, fight, settings, coach and offer at S22+, 22:9 and 16:9).
+- Portrait frames now come in two variants: play reclaims the coach band and anchors CANCEL/AVOID DOCK_PAD above the safe bottom, and coach (tutorial) keeps the buttons above the strip. frameOf picks the variant from `layout.coach`, so anything that calls frameFor directly (for example e2e taps) gets 'play' by default.
+- To keep 16:9 pixel-identical while still filling tall screens, make every new offset a function of E that is 0 at E = 0 (for example reclaim = min(2E, 56)). A unit test pins the 16:9 constants.
+- Gotcha: a safe box shrinks E. At h = 508 the safe box is 480 tall, so E = 0, so tests that sweep heights must compute E from the safe box height, not the canvas height. The fallback toast spot under CANCEL can run off the canvas at small E; clamp it.
+- Tooling: a montage of screenshots goes through Playwright with images inlined as data URIs (file:// does not load from setContent). PIL and ImageMagick are not installed.

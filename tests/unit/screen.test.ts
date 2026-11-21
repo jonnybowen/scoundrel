@@ -4,7 +4,7 @@
  * Layout must keep every rect inside the canvas and the safe box, and the board groups must not overlap.
  */
 import { describe, expect, it } from 'vitest';
-import { computeLayout, frameOf } from '../../src/render/layout';
+import { computeLayout, DOCK_PAD, frameFor, frameOf } from '../../src/render/layout';
 import { BASE_LONG, CHROME_EDGE, CHROME_EDGE_BOTTOM, MAX_LONG, SHORT_SIDE, screenGeometry } from '../../src/render/screen';
 import type { Viewport } from '../../src/render/types';
 import { DEFAULT_SETTINGS } from '../../src/ui/settings';
@@ -232,3 +232,108 @@ describe('layout uses the extra length', () => {
     expect(wide.discard.x - wide.deck.x).toBeGreaterThan(base.discard.x - base.deck.x + 40);
   });
 });
+
+describe('tall portrait: no dead band under the action dock', () => {
+  const bottomOf = (r: Rect): number => r.y + r.h;
+  const lowest = (l: LayoutSnapshot): number => Math.max(...[...l.buttons.values()].map(bottomOf));
+  const TALL: [string, Viewport][] = [
+    ['S22+ portrait', S22_PORTRAIT],
+    ['S22+ portrait, cutout + gesture insets', vp(412, 892, 2.625, { top: 32, right: 0, bottom: 24, left: 0 })],
+    ['Pixel 7 portrait', vp(412, 839, 2.625)],
+    ['Pixel 7 portrait (full height)', vp(412, 915, 2.625)],
+    ['22:9 portrait', vp(360, 880, 3)],
+  ];
+
+  it.each(TALL)('%s: AVOID (choosing) and CANCEL (fight) sit DOCK_PAD above the safe bottom', (_n, v) => {
+    const g = screenGeometry(v);
+    const safeBottom = g.safe.y + g.safe.h;
+    const choosing = computeLayout(selectView(armed, ui()), v);
+    const fight = computeLayout(selectView(armed, ui({ pendingFight: 'S10' })), v);
+    expect(choosing.buttons.has('avoid')).toBe(true);
+    for (const l of [choosing, fight]) {
+      expect(safeBottom - lowest(l), 'gap under the lowest button').toBe(DOCK_PAD);
+    }
+    // The S22+ dead band (~125 logical px under AVOID before this change) cannot come back.
+    expect(safeBottom - bottomOf(choosing.buttons.get('avoid')!)).toBeLessThanOrEqual(12);
+  });
+
+  it('S22+ portrait: the board spreads over the whole height (before/after extents)', () => {
+    const l = computeLayout(selectView(armed, ui()), S22_PORTRAIT);
+    const f = frameOf(l);
+    // Deck row, room, tray and dock all moved down from the old spread (deck 61, room 177, weapon 297, AVOID 420-448).
+    expect(l.deck.y).toBe(71);
+    expect(f.roomY).toBe(208);
+    expect(l.weapon.y).toBe(336);
+    expect(l.buttons.get('avoid')).toEqual({ x: 35, y: 535, w: 200, h: 32 });
+    // The hint line sits in the dock, right above AVOID.
+    expect(f.hint.y).toBe(521);
+  });
+
+  it('16:9 portrait frames are unchanged in both modes (play and tutorial coach)', () => {
+    for (const mode of ['play', 'coach'] as const) {
+      const f = frameFor('portrait', { w: 270, h: 480 }, { x: 0, y: 0, w: 270, h: 480 }, mode);
+      expect(f.actions).toEqual({
+        avoid: { x: 35, y: 338, w: 200, h: 28 },
+        fightWeapon: { x: 35, y: 330, w: 200, h: 26 },
+        fightBarehanded: { x: 35, y: 362, w: 200, h: 26 },
+        cancel: { x: 35, y: 394, w: 200, h: 20 },
+      });
+      expect([f.deck.y, f.roomY, f.weapon.y, f.hint.y, f.toastY]).toEqual([28, 124, 228, 210, 428]);
+      expect(f.coach).toEqual({ x: 6, y: 416, w: 258, h: 60 });
+      expect([f.play.y, f.tutorial.y, f.logoY, f.showcaseY, f.footerY]).toEqual([318, 356, 64, 150, 468]);
+    }
+  });
+
+  // Every portrait height from 16:9 to 22:9 (no insets beyond the minimum edges).
+  const heights = Array.from({ length: 181 }, (_, i) => 480 + i);
+  const safeFor = (h: number): Rect => {
+    const spare = h - 480;
+    let top = 24;
+    let bottom = 8;
+    if (top + bottom > spare) {
+      top = Math.floor((top * spare) / 32);
+      bottom = Math.floor((bottom * spare) / 32);
+    }
+    return { x: 0, y: top, w: 270, h: h - top - bottom };
+  };
+
+  it('play frames, 480..660 tall: dock, hint and toast stay inside the box and clear of each other', () => {
+    for (const h of heights) {
+      const box = safeFor(h);
+      const f = frameFor('portrait', { w: 270, h }, box, 'play');
+      const a = f.actions;
+      const tag = `h=${h}`;
+      for (const r of [a.avoid, a.fightWeapon, a.fightBarehanded, a.cancel]) expect(inside(r, box), tag).toBe(true);
+      expect(bottomOf(a.fightWeapon), tag).toBeLessThanOrEqual(a.fightBarehanded.y);
+      expect(bottomOf(a.fightBarehanded), tag).toBeLessThanOrEqual(a.cancel.y);
+      expect(bottomOf(a.avoid), tag).toBeLessThanOrEqual(bottomOf(a.cancel));
+      // Tray captions end above the FIGHT WITH caption (9 above the first fight button).
+      expect(f.weapon.y + 98, tag).toBeLessThanOrEqual(a.fightWeapon.y - 9 + 5);
+      // Hint (5px tall text) never overlaps AVOID and never reaches up into the tray.
+      expect(f.hint.y + 5, tag).toBeLessThanOrEqual(a.avoid.y);
+      expect(f.hint.y, tag).toBeGreaterThanOrEqual(f.roomY + CARD_H_ROOM);
+      // Toast (13 tall) stays on the canvas and off every action button.
+      const toast = { x: 60, y: f.toastY, w: 150, h: 13 };
+      expect(f.toastY + 13, tag).toBeLessThanOrEqual(h);
+      for (const r of [a.avoid, a.fightWeapon, a.fightBarehanded, a.cancel]) expect(overlaps(toast, r), tag).toBe(false);
+      // Title buttons and footer stay ordered inside the box.
+      expect(bottomOf(f.tutorial) + 11, tag).toBeLessThanOrEqual(f.footerY);
+      if (box.h - 480 >= 28) expect(box.y + box.h - bottomOf(a.cancel), tag).toBe(DOCK_PAD);
+    }
+  });
+
+  it('coach frames, 480..660 tall: the buttons stay above a coach strip that ends 4px above the safe bottom (as at 16:9)', () => {
+    for (const h of heights) {
+      const box = safeFor(h);
+      const f = frameFor('portrait', { w: 270, h }, box, 'coach');
+      const tag = `h=${h}`;
+      expect(bottomOf(f.coach), tag).toBe(box.y + box.h - 4);
+      expect(f.coach.h, tag).toBeGreaterThanOrEqual(60);
+      expect(f.coach.h, tag).toBeLessThanOrEqual(72);
+      expect(bottomOf(f.actions.cancel), tag).toBeLessThanOrEqual(f.coach.y);
+      expect(f.weapon.y + 98, tag).toBeLessThanOrEqual(f.actions.fightWeapon.y - 9 + 5);
+    }
+  });
+});
+
+const CARD_H_ROOM = 78;
