@@ -497,7 +497,7 @@ export function createCanvasRenderer(): Renderer {
         const cy = layout.weapon.y + Math.round(layout.weapon.h / 2);
         drawText(ctx, 'NO WEAPON', cx, cy - 10, PAL.greyDark, 1, 'center');
         drawText(ctx, 'EQUIP A DIAMOND', cx, cy + 1, PAL.greyDark, 1, 'center');
-        drawText(ctx, 'TO BLOCK DAMAGE', cx, cy + 9, PAL.greyDark, 1, 'center');
+        drawText(ctx, 'TO REDUCE DAMAGE', cx, cy + 9, PAL.greyDark, 1, 'center');
       }
     }
 

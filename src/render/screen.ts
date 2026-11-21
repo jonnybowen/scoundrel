@@ -39,17 +39,54 @@ export const INTEGER_WASTE_HIDPI = 0.05;
  * Galaxy S22+ (1080x2340, ~393 ppi, so ~15.5 device px per mm; 4 device px per logical px): the punch-hole is a
  * ~3 mm hole centred ~3 mm below the top edge, so it ends ~4.5 mm = ~70 device px = ~18 logical px down, right
  * above the centred ROOM label. The display corners have a radius of ~6 mm = ~95 device px = ~24 logical px.
- * - CHROME_EDGE = 24 (portrait top, landscape left and right, since the camera can be on either short side):
- *   ROOM / SCOUNDREL text starts at 24 + 5 = 29, ~11 logical px (~2.8 mm) under the hole. The corner buttons'
- *   outer corner (4 px in from the side, 27 px down) is outside a 24 px radius. In landscape the 24 px side margin
- *   puts SCORE at x 32 and the settings button's right edge 29 px in, both outside the corner and clear of the hole.
- *   Portrait has 105 logical px spare on the S22+ (585 - 480), so 24 costs under a quarter of it.
- * - CHROME_EDGE_BOTTOM = 8 (portrait bottom): the bottom corners are rounded too; the coach strip is inset 6 px from
- *   the sides, and a 24 px corner arc passes 6 px in at 8.1 px up, so 8 keeps its corners on the glass. It also
- *   lifts the title footer off the gesture handle.
+ * - CHROME_EDGE = 24 (landscape left and right, since the camera can be on either short side; also the portrait top
+ *   floor on shorter tall screens): in landscape the 24 px side margin puts SCORE at x 32 and the settings button's
+ *   right edge 29 px in, both outside the corner and clear of the hole. Landscape top and bottom are the long edges
+ *   (no cutout, no nav bar), so landscape takes no top or bottom margin.
+ * - CHROME_EDGE_BOTTOM = 8 (portrait bottom floor): a 24 px corner arc passes 6 px in (the coach strip's inset) at
+ *   8.1 px up, so 8 keeps the strip's corners on the glass.
+ * - CHROME_EDGE_TOP_TALL = 36 and CHROME_EDGE_BOTTOM_TALL = 40 (portrait, once the screen is tall enough; on-device
+ *   review 2026-11-21): at 24 the ROOM row sat ~34 device px under the punch-hole (hole bottom y 74, ROOM y ~108),
+ *   which read as cramped. At 36 the corner buttons start at y 36 + 3 = 39 (156 device px), ~82 device px (~5.3 mm)
+ *   under the hole. At the bottom, the S22+ runs 3-button navigation: in immersive mode the bar is hidden and the
+ *   safe-bottom inset reads 0, but a swipe brings it back over a strip 135 device px (~34 logical) tall, which covered
+ *   AVOID's bottom edge. At 40 the play dock's bottom edge (DOCK_PAD 10 above the safe bottom) is 50 logical px up,
+ *   16 px (64 device px) clear of that strip; the tutorial coach strip ends 44 up (10 clear) and the title footer 52.
+ *   A gesture-nav phone's handle (~16 logical) is cleared by a wide margin too.
+ *
+ * The tall margins are not taken all at once (see portraitEdges): the play frame needs PORTRAIT_DOCK_RESERVE logical
+ * px of extra height to anchor its action dock low, so the floor margins come first, then that reserve, and only then
+ * the extra margin. Nothing gets worse than the floor margins on a shorter tall screen (a phone browser with its own
+ * toolbars), and 16:9 (no spare) keeps margin 0.
  */
 export const CHROME_EDGE = 24;
 export const CHROME_EDGE_BOTTOM = 8;
+export const CHROME_EDGE_TOP_TALL = 36;
+export const CHROME_EDGE_BOTTOM_TALL = 40;
+/**
+ * Extra content height the portrait play frame needs before its action dock is fully anchored (layout.ts reclaims
+ * the coach band at 2E up to 66 - DOCK_PAD = 56, so E = 28). A unit test keeps the two in step.
+ */
+export const PORTRAIT_DOCK_RESERVE = 28;
+
+/**
+ * Minimum portrait top and bottom margins (logical px) for a canvas `spare` px longer than 16:9, before insets:
+ * 0..32 spare: the floor margins 24/8 scaled down proportionally (so 16:9 is 0/0); 32..60: 24/8 while the content
+ * gets the dock reserve; 60..104: the margins grow towards 36/40, sharing the extra 12:32; 104 up: 36/40.
+ * S22+ (spare 105): 36/40. Pixel 7 full screen (spare 120): 36/40. 22:9 (spare 180): 36/40.
+ */
+export function portraitEdges(spare: number): { top: number; bottom: number } {
+  const s = Math.max(0, spare);
+  const floorSum = CHROME_EDGE + CHROME_EDGE_BOTTOM;
+  if (s < floorSum) {
+    return { top: Math.floor((CHROME_EDGE * s) / floorSum), bottom: Math.floor((CHROME_EDGE_BOTTOM * s) / floorSum) };
+  }
+  const growTop = CHROME_EDGE_TOP_TALL - CHROME_EDGE;
+  const growBottom = CHROME_EDGE_BOTTOM_TALL - CHROME_EDGE_BOTTOM;
+  const extra = Math.min(growTop + growBottom, Math.max(0, s - floorSum - PORTRAIT_DOCK_RESERVE));
+  const top = CHROME_EDGE + Math.floor((growTop * extra) / (growTop + growBottom));
+  return { top, bottom: CHROME_EDGE_BOTTOM + extra - (top - CHROME_EDGE) };
+}
 
 export type Insets = SafeInsets;
 
@@ -104,9 +141,10 @@ function safeBox(vp: Viewport, w: number, h: number, scale: number, availW: numb
   const edge = (minimum: number, letterboxDev: number): number => Math.max(0, Math.ceil(minimum - letterboxDev / scale - 1e-6));
   if (vp.orientation === 'portrait') {
     const lb = (availH - devH) / 2;
-    let top = Math.max(edge(CHROME_EDGE, lb), toLogical(s.top, lb));
-    let bottom = Math.max(edge(CHROME_EDGE_BOTTOM, lb), toLogical(s.bottom, lb));
     const spare = h - BASE_LONG;
+    const min = portraitEdges(spare);
+    let top = Math.max(edge(min.top, lb), toLogical(s.top, lb));
+    let bottom = Math.max(edge(min.bottom, lb), toLogical(s.bottom, lb));
     if (top + bottom > spare) {
       const k = spare / (top + bottom);
       top = Math.floor(top * k);

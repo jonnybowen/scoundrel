@@ -5,7 +5,18 @@
  */
 import { describe, expect, it } from 'vitest';
 import { computeLayout, DOCK_PAD, frameFor, frameOf } from '../../src/render/layout';
-import { BASE_LONG, CHROME_EDGE, CHROME_EDGE_BOTTOM, MAX_LONG, SHORT_SIDE, screenGeometry } from '../../src/render/screen';
+import {
+  BASE_LONG,
+  CHROME_EDGE,
+  CHROME_EDGE_BOTTOM,
+  CHROME_EDGE_BOTTOM_TALL,
+  CHROME_EDGE_TOP_TALL,
+  MAX_LONG,
+  PORTRAIT_DOCK_RESERVE,
+  portraitEdges,
+  SHORT_SIDE,
+  screenGeometry,
+} from '../../src/render/screen';
 import type { Viewport } from '../../src/render/types';
 import { DEFAULT_SETTINGS } from '../../src/ui/settings';
 import { selectView, type LayoutSnapshot, type Rect, type UiLocalState } from '../../src/ui/view';
@@ -79,8 +90,10 @@ describe('screenGeometry', () => {
   });
 
   it('keeps a minimum HUD margin on the long axis even with no reported insets (punch-hole, rounded corners)', () => {
-    // Portrait: 24 under the top edge (camera + corners), 8 above the bottom edge (corners).
-    expect(screenGeometry(S22_PORTRAIT).safe).toEqual({ x: 0, y: CHROME_EDGE, w: 270, h: 585 - CHROME_EDGE - CHROME_EDGE_BOTTOM });
+    // Portrait: 36 under the top edge (clear of the punch-hole), 40 above the bottom edge (clear of the 3-button nav
+    // bar's ~34 logical px strip, which can be swiped in over immersive mode while the bottom inset reads 0).
+    expect(screenGeometry(S22_PORTRAIT).safe).toEqual({ x: 0, y: 36, w: 270, h: 585 - 36 - 40 });
+    expect([CHROME_EDGE_TOP_TALL, CHROME_EDGE_BOTTOM_TALL]).toEqual([36, 40]);
     // Landscape: the camera can be on either short side, so both sides keep 24.
     expect(screenGeometry(S22_LANDSCAPE).safe).toEqual({ x: CHROME_EDGE, y: 0, w: 585 - 2 * CHROME_EDGE, h: 270 });
     // 16:9 has no spare length: the original frames, unchanged.
@@ -88,20 +101,20 @@ describe('screenGeometry', () => {
     expect(screenGeometry(vp(360, 640, 3)).safe).toEqual({ x: 0, y: 0, w: 270, h: 480 });
   });
 
-  it('S22+ HUD: ROOM, SCORE and the corner buttons sit at least CHROME_EDGE from the physical long-axis edges', () => {
+  it('S22+ HUD: ROOM, SCORE and the corner buttons sit at least CHROME_EDGE_TOP_TALL (portrait) / CHROME_EDGE (landscape) from the physical long-axis edges', () => {
     for (const v of [S22_PORTRAIT, S22_LANDSCAPE]) {
       const g = screenGeometry(v);
       const l = computeLayout(selectView(armed, ui()), v);
       const f = frameOf(l);
       for (const id of ['mute', 'settings'] as const) {
         const b = l.buttons.get(id)!;
-        if (v.orientation === 'portrait') expect(b.y).toBeGreaterThanOrEqual(CHROME_EDGE);
+        if (v.orientation === 'portrait') expect(b.y).toBeGreaterThanOrEqual(CHROME_EDGE_TOP_TALL);
         else {
           expect(b.x).toBeGreaterThanOrEqual(CHROME_EDGE);
           expect(g.w - (b.x + b.w)).toBeGreaterThanOrEqual(CHROME_EDGE);
         }
       }
-      if (v.orientation === 'portrait') expect(f.topY).toBeGreaterThanOrEqual(CHROME_EDGE);
+      if (v.orientation === 'portrait') expect(f.topY).toBeGreaterThanOrEqual(CHROME_EDGE_TOP_TALL);
       else expect(f.scoreX).toBeGreaterThanOrEqual(CHROME_EDGE);
     }
   });
@@ -113,15 +126,38 @@ describe('screenGeometry', () => {
   });
 
   it('maps safe-area insets onto the long axis of the canvas, taking the larger of inset and minimum', () => {
-    const p = screenGeometry(vp(412, 892, 2.625, { top: 40, right: 0, bottom: 16, left: 0 }));
-    // 40 css * 2.625 / 4 = 26.25 -> 27 logical (> 24); 16 css -> 11 (> 8).
-    expect(p.safe).toEqual({ x: 0, y: 27, w: 270, h: 585 - 27 - 11 });
-    const small = screenGeometry(vp(412, 892, 2.625, { top: 30, right: 0, bottom: 0, left: 0 }));
-    // 30 css -> 20 logical, under the minimum: 24 wins.
-    expect(small.safe.y).toBe(CHROME_EDGE);
+    const p = screenGeometry(vp(412, 892, 2.625, { top: 60, right: 0, bottom: 64, left: 0 }));
+    // 60 css * 2.625 / 4 = 39.4 -> 40 logical (> 36); 64 css -> 42 (> 40).
+    expect(p.safe).toEqual({ x: 0, y: 40, w: 270, h: 585 - 40 - 42 });
+    const small = screenGeometry(vp(412, 892, 2.625, { top: 30, right: 0, bottom: 16, left: 0 }));
+    // 30 css -> 20 logical and 16 css -> 11, under the minimums: 36 and 40 win.
+    expect(small.safe).toEqual({ x: 0, y: CHROME_EDGE_TOP_TALL, w: 270, h: 585 - CHROME_EDGE_TOP_TALL - CHROME_EDGE_BOTTOM_TALL });
     const l = screenGeometry(vp(892, 412, 2.625, { top: 0, right: 0, bottom: 0, left: 40 }));
     // Symmetric so the centre line stays at w/2.
     expect(l.safe).toEqual({ x: 27, y: 0, w: 585 - 54, h: 270 });
+  });
+
+  it('portrait margins: floor first, then the dock reserve, then the tall margins (16:9 stays 0)', () => {
+    expect(portraitEdges(0)).toEqual({ top: 0, bottom: 0 });
+    expect(portraitEdges(CHROME_EDGE + CHROME_EDGE_BOTTOM)).toEqual({ top: CHROME_EDGE, bottom: CHROME_EDGE_BOTTOM });
+    // Pixel 7 in a browser (550 tall): a little over the floor, and the content keeps the reserve.
+    expect(portraitEdges(70)).toEqual({ top: 26, bottom: 16 });
+    for (const spare of [104, 105, 120, 180]) expect(portraitEdges(spare)).toEqual({ top: 36, bottom: 40 });
+    let prev = portraitEdges(0);
+    for (let spare = 1; spare <= 180; spare++) {
+      const e = portraitEdges(spare);
+      // Never shrinks as the screen grows, and never jumps (at most 2 px per px: top and bottom each floor separately).
+      expect(e.top, `spare ${spare}`).toBeGreaterThanOrEqual(prev.top);
+      expect(e.bottom, `spare ${spare}`).toBeGreaterThanOrEqual(prev.bottom);
+      expect(e.top + e.bottom - prev.top - prev.bottom, `spare ${spare}`).toBeLessThanOrEqual(2);
+      // Once the floor margins are met, the content keeps the dock reserve before the margins grow past the floor.
+      if (spare >= CHROME_EDGE + CHROME_EDGE_BOTTOM) {
+        expect(spare - e.top - e.bottom, `spare ${spare}`).toBeGreaterThanOrEqual(Math.min(PORTRAIT_DOCK_RESERVE, spare - CHROME_EDGE - CHROME_EDGE_BOTTOM));
+      }
+      prev = e;
+    }
+    // The reserve is exactly what the play frame needs to anchor its dock (reclaim = min(2E, 66 - DOCK_PAD)).
+    expect(2 * PORTRAIT_DOCK_RESERVE).toBe(66 - DOCK_PAD);
   });
 
   it('never shrinks the safe box below the 16:9 design size', () => {
@@ -253,20 +289,39 @@ describe('tall portrait: no dead band under the action dock', () => {
     for (const l of [choosing, fight]) {
       expect(safeBottom - lowest(l), 'gap under the lowest button').toBe(DOCK_PAD);
     }
-    // The S22+ dead band (~125 logical px under AVOID before this change) cannot come back.
+    // The S22+ dead band (~125 logical px under AVOID before the portrait-fill change) cannot come back: the whole
+    // gap to the glass is the bottom margin plus DOCK_PAD.
     expect(safeBottom - bottomOf(choosing.buttons.get('avoid')!)).toBeLessThanOrEqual(12);
+    expect(g.h - bottomOf(choosing.buttons.get('avoid')!)).toBeLessThanOrEqual(CHROME_EDGE_BOTTOM_TALL + DOCK_PAD + 2);
   });
 
   it('S22+ portrait: the board spreads over the whole height (before/after extents)', () => {
     const l = computeLayout(selectView(armed, ui()), S22_PORTRAIT);
     const f = frameOf(l);
-    // Deck row, room, tray and dock all moved down from the old spread (deck 61, room 177, weapon 297, AVOID 420-448).
-    expect(l.deck.y).toBe(71);
-    expect(f.roomY).toBe(208);
-    expect(l.weapon.y).toBe(336);
-    expect(l.buttons.get('avoid')).toEqual({ x: 35, y: 535, w: 200, h: 32 });
+    // Deck row, room, tray and dock spread over the height (pre-fill: deck 61, room 177, weapon 297, AVOID 420-448;
+    // portrait-fill with the 24/8 margins: deck 71, room 208, weapon 336, AVOID 535-567).
+    expect(l.deck.y).toBe(77);
+    expect(f.roomY).toBe(200);
+    expect(l.weapon.y).toBe(320);
+    expect(l.buttons.get('avoid')).toEqual({ x: 35, y: 504, w: 200, h: 31 });
     // The hint line sits in the dock, right above AVOID.
-    expect(f.hint.y).toBe(521);
+    expect(f.hint.y).toBe(490);
+  });
+
+  // S22+ with 3-button navigation: the bar is hidden in immersive mode (bottom inset 0) but a swipe brings it back
+  // over the bottom 135 device px (~34 logical). Every button, the coach strip and the title footer stay above it.
+  const NAV_STRIP = 34;
+  it('S22+ portrait: buttons, coach strip and footer clear the 3-button nav strip; the HUD clears the punch-hole', () => {
+    const g = screenGeometry(S22_PORTRAIT);
+    const choosing = computeLayout(selectView(armed, ui()), S22_PORTRAIT);
+    const fight = computeLayout(selectView(armed, ui({ pendingFight: 'S10' })), S22_PORTRAIT);
+    for (const l of [choosing, fight]) expect(g.h - NAV_STRIP - lowest(l), 'button clear of the nav strip').toBeGreaterThanOrEqual(12);
+    const coach = frameFor('portrait', { w: g.w, h: g.h }, g.safe, 'coach');
+    expect(g.h - NAV_STRIP - bottomOf(coach.coach), 'coach strip clear of the nav strip').toBeGreaterThanOrEqual(8);
+    const title = frameFor('portrait', { w: g.w, h: g.h }, g.safe, 'play');
+    expect(g.h - NAV_STRIP - (title.footerY + 5), 'title footer clear of the nav strip').toBeGreaterThanOrEqual(8);
+    // The punch-hole ends ~18.5 logical px (74 device px) down; the corner buttons start at 39.
+    expect(choosing.buttons.get('settings')!.y - 18.5).toBeGreaterThanOrEqual(16);
   });
 
   it('16:9 portrait frames are unchanged in both modes (play and tutorial coach)', () => {
@@ -287,15 +342,16 @@ describe('tall portrait: no dead band under the action dock', () => {
   // Every portrait height from 16:9 to 22:9 (no insets beyond the minimum edges).
   const heights = Array.from({ length: 181 }, (_, i) => 480 + i);
   const safeFor = (h: number): Rect => {
-    const spare = h - 480;
-    let top = 24;
-    let bottom = 8;
-    if (top + bottom > spare) {
-      top = Math.floor((top * spare) / 32);
-      bottom = Math.floor((bottom * spare) / 32);
-    }
+    const { top, bottom } = portraitEdges(h - 480);
     return { x: 0, y: top, w: 270, h: h - top - bottom };
   };
+
+  it('safeFor matches screenGeometry at S22+, Pixel 7 and 22:9', () => {
+    for (const v of [S22_PORTRAIT, vp(412, 915, 2.625), vp(360, 880, 3)]) {
+      const g = screenGeometry(v);
+      expect(safeFor(g.h)).toEqual(g.safe);
+    }
+  });
 
   it('play frames, 480..660 tall: dock, hint and toast stay inside the box and clear of each other', () => {
     for (const h of heights) {

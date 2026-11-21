@@ -35,3 +35,9 @@
 - To keep 16:9 pixel-identical while still filling tall screens, make every new offset a function of E that is 0 at E = 0 (for example reclaim = min(2E, 56)). A unit test pins the 16:9 constants.
 - Gotcha: a safe box shrinks E. At h = 508 the safe box is 480 tall, so E = 0, so tests that sweep heights must compute E from the safe box height, not the canvas height. The fallback toast spot under CANCEL can run off the canvas at small E; clamp it.
 - Tooling: a montage of screenshots goes through Playwright with images inlined as data URIs (file:// does not load from setContent). PIL and ImageMagick are not installed.
+
+### 2026-11-21: Tall portrait margins after on-device review (S22+, 3-button nav)
+- Files: src/render/screen.ts (CHROME_EDGE_TOP_TALL 36, CHROME_EDGE_BOTTOM_TALL 40, PORTRAIT_DOCK_RESERVE 28, portraitEdges(spare)), src/render/renderer.ts (tray caption TO REDUCE DAMAGE), tests/unit/screen.test.ts.
+- On a 3-button-nav phone, immersive mode hides the bar and the bottom inset reads 0, but a swipe brings back a ~34 logical px strip. Insets cannot protect against it, so the minimum margin has to.
+- Phasing margins by spare (floor, then the 28 px the play dock needs to anchor, then the tall margins) avoids reintroducing the dead band at browser heights. Plain proportional scaling of larger margins would have left E ~1 at Pixel 7 Chrome (550) and unanchored the dock.
+- S22+ portrait now: safe 36..545, E 29, deck 77, room 200, weapon 320, AVOID 504-535 (50 above the glass), coach strip ends 541.
