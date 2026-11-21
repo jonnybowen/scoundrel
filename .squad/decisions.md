@@ -584,7 +584,7 @@ Advisories (not required): tests/e2e/util.ts toCss could read the logical size i
 **By:** Tyrol
 **Recorded:** 2026-11-21T16-55-51
 **References:** Adama, Starbuck, Tigh, fullscreen-layout, decision 2026-11-20 (c)
-**Status:** APPROVED by Adama's review gate (2026-11-21T17-01-16). Amends ruling (c) of 2026-11-20T17-21-25 and items 1, 3 and 4 of Starbuck's fullscreen contract (2026-11-21T16-33-44).
+**Status:** APPROVED by Adama's review gate (2026-11-21T17-01-16). Amends ruling (c) of 2026-11-20T17-21-25 and items 1, 3 and 4 of Starbuck's fullscreen contract (2026-11-21T16-33-44). The portrait margins of item 3 (top 24, bottom 8) are AMENDED by Starbuck's portrait-margins (2026-11-21T18-29-43, approved 2026-11-21T18-36-50): tall portrait now phases in to top 36 / bottom 40 via portraitEdges(spare); landscape is unchanged.
 **Why:** Amends decision 2026-11-20 (c) and the fullscreen-layout screen contract (src/render/screen.ts).
 
 1. Integer-upscale threshold: INTEGER_WASTE = 0.2 (the recorded rule) applies when dpr < 2. INTEGER_WASTE_HIDPI = 0.05 applies only when dpr >= 2, where uneven nearest-neighbour pixels do not show. Pinned by unit tests: 1600x900@1 gives 3x, 2560x1440@1 gives 5x, 1100x620@1 gives 2x (all 480x270). The S22+ (412x892@2.625, both orientations) and the Pixel 7 (412x915@2.625) give exactly 4x.
@@ -644,6 +644,36 @@ Checks against the decisions:
 On the user's request: in S22+ play, the gap under the lowest button goes from about 129 logical px to 10 (DOCK_PAD). Screenshots confirm this.
 
 Advisories (not required): (1) Tigh: add a tutorial (coach) state to layouts() in the 8-viewport describe.each so coach mode is covered permanently; my probe covered it this time. (2) Copy: a weapon reduces damage rather than blocking all of it, so consider 'TO SOFTEN BLOWS' or 'TO REDUCE DAMAGE' (Starbuck, at her discretion). (3) The tray caption is a pixel change in landscape too; it is accepted because it is static copy and the rects are unchanged.
+
+### 2026-11-21: Tall-portrait margins: top 24 -> 36 and bottom 8 -> 40 (new CHROME_EDGE_TOP_TALL / CHROME_EDGE_BOTTOM_TALL), phased in by portraitEdges(spare) after a 28 px dock reserve; landscape unchanged; tray caption now 'TO REDUCE DAMAGE'
+**By:** Starbuck
+**Recorded:** 2026-11-21T18-29-43
+**References:** Adama, Tigh, fullscreen-layout, portrait-fill
+**Status:** APPROVED by Adama's review gate (2026-11-21T18-36-50, next entry). Amends the portrait CHROME_EDGE margins (top 24, bottom CHROME_EDGE_BOTTOM 8) of the fullscreen-layout revision (2026-11-21T16-55-51, item 3); the landscape margins of that revision are unchanged. Also takes up the tray-caption copy advisory of the portrait-fill review (2026-11-21T17-30-15).
+**Why:** User request after on-device review (S22+, 3-button nav): more space at the top and bottom in portrait.
+
+Changes (src/render/screen.ts, render only):
+1. New constants CHROME_EDGE_TOP_TALL = 36 and CHROME_EDGE_BOTTOM_TALL = 40 for the portrait top and bottom. CHROME_EDGE (24) stays as the landscape side margin and the portrait top floor; CHROME_EDGE_BOTTOM (8) stays as the portrait bottom floor.
+2. New exported portraitEdges(spare) gives the minimum portrait margins for a canvas `spare` px longer than 16:9. For spare 0..32 it is the old 24/8 scaled proportionally, which is identical to before, so 16:9 stays 0/0. For 32..60 it stays at 24/8 while the content gains PORTRAIT_DOCK_RESERVE = 28 px, the E at which the play frame fully anchors its dock (2E reclaim = 66 - DOCK_PAD); a unit test keeps the two in step. For 60..104 the margins grow towards 36/40, splitting the extra 12:32. From 104 up they are 36/40. So no aspect gets less than before, and the play dock never loses its anchoring (the dead band cannot come back at browser heights such as Pixel 7 Chrome at 550). Insets still apply as max(inset, minimum), with the existing proportional overflow scaling.
+3. Why these numbers (S22+, 4 device px per logical px): the punch-hole ends at y 74 device (~18.5 logical). At top 36 the corner buttons start at 39 logical (156 device), ~82 device px (~5.3 mm) under the hole; before, ROOM was ~34 device px under it. The 3-button nav strip is the bottom 135 device px (~34 logical); it is hidden in immersive mode (inset 0) but can be swiped back in. At bottom 40 the dock's bottom edge (DOCK_PAD 10 above the safe bottom) is 50 logical px above the glass, 16 px (64 device px) clear of the strip. The coach strip ends 44 up (10 clear) and the title footer text 47 up.
+4. S22+ portrait (270x585, safe 36..545, E 29). Play mode: deck y 77, room 200, weapon 320, hint 490, AVOID 504-535, fight buttons from 445, CANCEL 515-535, toast 420. Coach mode: the coach strip runs 475-541. Title: PLAY at 423, TUTORIAL bottom at 485, footer at 533. Previous values (24/8): deck 71, room 208, weapon 336, AVOID 535-567. Pixel 7 full screen (600): safe 36..560, AVOID bottom 550. 22:9 (660): safe 36..620. Pixel 7 browser (550): margins 26/16.
+5. Landscape is unchanged. Landscape top and bottom are the long edges, with no cutout and no nav bar. A 3-button bar in landscape sits on a short side: the landscape dock is ~47 logical px from the right edge, already clear of a 34 px bar. Only the corner settings/mute buttons (29 in) sit under a swiped-in bar, which is transient and the user's own gesture. 16:9 has no spare length in either orientation, so margins stay 0 and its frames are pixel-identical.
+6. Copy: the empty-tray caption 'TO BLOCK DAMAGE' becomes 'TO REDUCE DAMAGE' (Adama's advisory).
+Tests: tests/unit/screen.test.ts now pins the S22+ safe box 36/40, the new S22+ extents, portraitEdges (monotone, no jumps, 16:9 = 0, reserve kept, reserve == (66 - DOCK_PAD)/2), a nav-strip clearance test (buttons >= 12 clear, coach strip and footer >= 8 clear) and the punch-hole clearance. It keeps the DOCK_PAD gap and the dead-band guard (avoid <= 12 above the safe bottom and <= bottom margin + DOCK_PAD + 2 above the glass). The sweep's safeFor now uses portraitEdges.
+
+### 2026-11-21: Review gate: APPROVE Starbuck's portrait-margins (tall-portrait CHROME_EDGE_TOP_TALL 36 / CHROME_EDGE_BOTTOM_TALL 40, portraitEdges phasing, 'TO REDUCE DAMAGE' caption)
+**By:** Adama
+**Recorded:** 2026-11-21T18-36-50
+**References:** Starbuck, portrait-margins, e3ecaca9
+**Why:** Verdict: APPROVE portrait-margins (Starbuck, uncommitted on top of 3bb412b).
+
+Verified:
+- portraitEdges(spare) phases in as claimed: 0-32 proportional 24/8 (16:9 = 0/0), 32-60 floor 24/8 with the 28 px PORTRAIT_DOCK_RESERVE going to content, 60-104 growth split 12:32, >=104 full 36/40. Margins never shrink below the old ones, and no step adds more than 2 px. spare 70 (Pixel 7 browser) gives 26/16. A unit test pins PORTRAIT_DOCK_RESERVE to layout's reclaim cap (2*28 = 66 - DOCK_PAD).
+- S22+ (270x585): safe y 36-545. AVOID {35,504,200,31}, bottom 535 = 50 logical (200 device px) above the glass, 16 logical (64 device px) clear of the 135-device-px 3-button nav strip. Corner buttons at y 39. The AVOID height drop from 32 to 31 follows layout's bh = floor((E+reclaim)/25) with E = 29, as designed.
+- Dead-band guard holds: lowest button sits exactly DOCK_PAD above the safe bottom, and the glass gap is at most CHROME_EDGE_BOTTOM_TALL + DOCK_PAD + 2.
+- 16:9 and landscape frames are unchanged (the existing tests still pass). Render is still rules-free, the canvas is still 2D-only, and hitTest is untouched. The tray caption now reads "TO REDUCE DAMAGE".
+- typecheck clean, vite build ok, npm test 402/402, e2e 55 passed / 23 skipped (unchanged split).
+Advisory (carried): the "WEAPONS BLOCK" title copy is a follow-up.
 
 ## Governance
 
