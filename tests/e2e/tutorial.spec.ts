@@ -143,7 +143,8 @@ test.describe('tutorial', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1_000);
     await expect(live(page)).not.toHaveAttribute('data-phase', /.*/);
-    // T on the title still starts the tutorial on demand.
+    // T on the title still starts the tutorial on demand. Drop the real run's save first, or the reload resumes it.
+    await page.evaluate(() => localStorage.removeItem('scoundrel.run.v1'));
     await page.goto('/');
     await page.waitForTimeout(500);
     await page.keyboard.press('t');

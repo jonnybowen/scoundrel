@@ -89,14 +89,15 @@
         "src/ui/save.ts",
         "tests/unit/save.test.ts"
       ],
-      "state": "author-locked",
+      "state": "cleared",
       "lockedAuthors": [
         "starbuck"
       ],
       "reviewer": "tigh",
       "reason": "save.test.ts misses 4 contract cases (M3,M4,M5,M12,M13 survive); add tests 1-4 from Tigh's review, src unchanged",
       "overrides": [],
-      "updatedAt": "2026-11-20T21:59:02.687Z"
+      "updatedAt": "2026-11-21T09:55:46.784Z",
+      "successor": "tyrol"
     }
   ]
 }

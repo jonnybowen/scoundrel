@@ -22,6 +22,7 @@ import { computeLayout, createRenderer } from '../render/types';
 import type { Renderer, Viewport } from '../render/types';
 import { createNeutralFx, createSilentAudio } from './fallbacks';
 import { keyToIntent, targetToIntent } from './input';
+import { attachAutosave, browserStorage, restoreRun } from './save';
 import { loadSettings, saveSettings } from './settings';
 import type { Settings } from './settings';
 import { selectView } from './view';
@@ -90,6 +91,8 @@ export function createApp(opts: AppOptions): App {
   let toastUntil = 0;
   const tutorial = createTutorialController();
   let firstSeed = opts.seed;
+  /** Resume-on-reload storage (src/ui/save.ts). null when localStorage is missing or throws: the app just won't resume. */
+  const runStorage = browserStorage();
 
   const renderer: Renderer = createRenderer();
   const fx: FxDirector = attempt(createFxDirector, createNeutralFx, 'fx');
@@ -179,6 +182,8 @@ export function createApp(opts: AppOptions): App {
         if (tutorial.active) safe(() => tutorial.onEvents(events, state));
       }),
     );
+    // Resume-on-reload: every batch saves the run (or clears it when finished, scripted, or not reproducible).
+    safe(() => unsubscribers.push(attachAutosave(created, runStorage, () => tutorial.active)));
     session = created;
     return created;
   };
@@ -226,6 +231,29 @@ export function createApp(opts: AppOptions): App {
     currentMusic = null;
     music('title');
   };
+
+  /**
+   * Boot: rebuild the last unfinished real run from storage. Seeded boots (?seed=, e2e) never resume. On failure the
+   * save is cleared by restoreRun and the title stays up. Never throws: a broken storage still boots.
+   */
+  const tryResume = (): void => {
+    if (opts.seed !== undefined) return;
+    try {
+      const run = restoreRun(ensureSession(0), runStorage);
+      if (!run.ok) {
+        if (run.reason !== 'none') console.warn('[app] could not resume the saved run:', run.reason, run.error ?? '');
+        return;
+      }
+      // session.replay broadcast one combined batch: land on the final state instead of animating it.
+      safe(() => fx.skip());
+      ui = { ...ui, screen: 'game', menuOpen: false, pendingFight: null, showResult: false, error: null, hover: null, tutorial: null };
+      music('dungeon');
+    } catch (e) {
+      console.warn('[app] resume failed', e);
+      ui = { ...ui, screen: 'title' };
+    }
+  };
+  tryResume();
 
   /**
    * Integration point 3 (gate): may the player do this in the tutorial right now? A blocked move never reaches the
@@ -534,6 +562,23 @@ export function createApp(opts: AppOptions): App {
     for (const [k, v] of attrs) coachLive.setAttribute(k, v);
   };
 
+  /** e2e hook: a compact run summary on the canvas (data-screen, data-phase, data-hp, data-room, data-fx). */
+  let runKey = '';
+  const mirrorRun = (view: GameView): void => {
+    const game = view.chrome.screen === 'game';
+    const attrs: [string, string][] = [
+      ['data-screen', view.chrome.screen],
+      ['data-phase', game ? view.phase : ''],
+      ['data-hp', game ? String(view.hp) : ''],
+      ['data-room', game ? view.room.map((rc) => rc?.card.id ?? '-').join(',') : ''],
+      ['data-fx', fx.isBusy() ? 'busy' : 'idle'],
+    ];
+    const key = attrs.map((a) => a[1]).join('|');
+    if (key === runKey) return;
+    runKey = key;
+    for (const [k, v] of attrs) canvas.setAttribute(k, v);
+  };
+
   // ----- frame loop ------------------------------------------------------------------------------------
 
   let raf = 0;
@@ -558,6 +603,7 @@ export function createApp(opts: AppOptions): App {
       fx.update(dt, layout);
       renderer.draw(view, layout, fx.frame(), t);
       mirrorCoach(view);
+      mirrorRun(view);
       errored = false;
     } catch (e) {
       if (!errored) console.error('[app] frame failed', e);
